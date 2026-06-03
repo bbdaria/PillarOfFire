@@ -1,0 +1,6 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+# Optional, only for the real engines (not needed for the offline demo):
+# anthropic>=0.40.0          # LLM_ENGINE=claude
+# faster-whisper>=1.0.0      # STT_ENGINE=ivrit  (ivrit-ai Hebrew models)

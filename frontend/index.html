@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>עמוד האש · Pillar of Fire</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="flame">🔥</span>
+      <div>
+        <h1>עמוד האש <span class="en">Pillar of Fire</span></h1>
+        <p class="tagline">לוח בקרה למוקדני חירום · זיהוי אירועים מתפתחים בזמן אמת</p>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="btn-all" class="primary">▶ הדמה את כל השיחות</button>
+      <span id="call-buttons" class="call-buttons"></span>
+      <button id="btn-reset" class="ghost">איפוס</button>
+    </div>
+  </header>
+
+  <div class="safety-banner">
+    ⚠️ מערכת תומכת החלטה בלבד — אינה מחליפה שיקול דעת אנושי או נהלי חירום רשמיים.
+  </div>
+
+  <main class="grid">
+    <!-- Column A: calls -->
+    <section class="col col-calls">
+      <div class="panel">
+        <h2>שיחות פעילות <span class="count" id="calls-count">0</span></h2>
+        <div id="calls-list" class="calls-list"></div>
+      </div>
+      <div class="panel">
+        <h2>תמלול חי <span class="sub" id="transcript-call"></span></h2>
+        <div id="transcript" class="transcript" dir="rtl">בחר שיחה כדי לראות תמלול…</div>
+      </div>
+      <div class="panel">
+        <h2>פרטים שחולצו</h2>
+        <div id="details" class="details">—</div>
+      </div>
+    </section>
+
+    <!-- Column B: map + incidents -->
+    <section class="col col-mid">
+      <div class="panel">
+        <h2>מפת מיקומים</h2>
+        <div id="map" class="map"></div>
+      </div>
+      <div class="panel">
+        <h2>אירועים פעילים <span class="count" id="incidents-count">0</span></h2>
+        <div id="incidents-list" class="incidents-list"></div>
+      </div>
+    </section>
+
+    <!-- Column C: incident detail -->
+    <section class="col col-detail">
+      <div class="panel panel-grow">
+        <h2>פרטי אירוע</h2>
+        <div id="incident-detail" class="incident-detail">בחר אירוע מהרשימה…</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
