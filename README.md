@@ -22,22 +22,38 @@ Hackathon 2026 MVP.
 First run creates a virtualenv and installs FastAPI/uvicorn/pydantic. No API keys
 or GPU needed — the demo runs **fully offline**.
 
-In the UI click **▶ הדמה את כל השיחות** ("Simulate all calls"). You'll see:
-1. Live Hebrew transcripts streaming in per call.
-2. Structured details (event type, location, hazards, casualties, severity…) filling in.
-3. Two calls being detected as the **same incident** and merged.
-4. Color-coded evidence showing which call contributed which detail.
-5. Severity and suggested next-steps updating after the merge.
-6. Map pins for detected locations.
+### Workspace model
+
+The UI is a **per-dispatcher workspace**, not a control-room dashboard:
+
+- A **dispatcher switcher** (top-right) chooses whose workspace you're in. You
+  see only **your** open incidents as calm cards.
+- Every finalized call opens **its own incident card** — nothing is merged
+  automatically.
+- Relatedness surfaces as a **merge suggestion** (⚠) — which can point to an
+  incident owned by **another dispatcher**. You **approve** or **reject** it.
+- Approving unifies the incidents into one **shared incident** visible in *all*
+  involved dispatchers' workspaces, while preserving **per-call provenance**.
+- Click a card → a **focused detail drawer** (transcript, structured summary,
+  merge suggestions, next steps). Hover any extracted fact to see its **source
+  call + dispatcher**.
+- The **map is shared/global**: one marker per incident, **color = severity**,
+  **size = number of merged calls**. Your own incidents get a white ring.
+- **⬆ Upload a recording** creates a new incident through the same pipeline.
+
+In the UI click **▶ הדמיית שיחות נכנסות** ("Simulate incoming calls").
 
 ## Demo scenario
 
-| Call | Content | Result |
-|------|---------|--------|
-| `call-1` | Explosion at a gas station on Herzl St, Tel Aviv — 2 injured | **inc-1** |
-| `call-2` | Fire / gas smell near the same gas station (different caller) | linked → **inc-1** |
-| `call-3` | Traffic accident on Route 6 near Hadera | separate **inc-2** |
-| `call-4` | Noisy/partial call mentioning Herzl + smoke | weakly linked → **inc-1** |
+| Call | Dispatcher | Content | Result |
+|------|------------|---------|--------|
+| `call-1` | דריה | Explosion at a gas station on Herzl St, Tel Aviv — 2 injured | **inc-1** |
+| `call-2` | נועה | Fire / gas smell near the same gas station (different caller) | **inc-2** → suggests merge with inc-1 (**cross-dispatcher**) |
+| `call-3` | נועה | Traffic accident on Route 6 near Hadera | separate **inc-3** |
+| `call-4` | דריה | Noisy/partial call mentioning Herzl + smoke | **inc-4** → weak suggestion to inc-1 |
+
+The headline interaction: `call-1` (Daria) and `call-2` (Noa) describe the same
+event from two operators, producing a **cross-dispatcher merge suggestion**.
 
 ## Architecture
 
@@ -78,10 +94,11 @@ LLM_ENGINE=claude ./run.sh
 Both fall back to the offline mock if the dependency/key is missing, so the demo
 never breaks.
 
-## How clustering works
+## How matching works
 
-A newly analyzed call is scored against existing incidents across five signals
-(weighted), and linked if the best score clears `0.55`:
+A newly analyzed incident is scored against every other open incident across
+five signals (weighted). If the best score clears `0.55` a **merge suggestion**
+is raised (never an automatic merge):
 
 | Signal | Weight | How |
 |--------|--------|-----|
@@ -91,20 +108,32 @@ A newly analyzed call is scored against existing incidents across five signals
 | Semantic similarity | 0.20 | Hebrew token Jaccard over transcripts |
 | Shared entities | 0.15 | overlap of hazards + location tokens |
 
-The full per-signal breakdown is shown in the incident view, so responders see
-**why** calls were linked — nothing is merged silently.
+The full per-signal breakdown is shown in the incident detail drawer, so
+responders see **why** a merge was suggested — nothing is merged silently.
 
 ## API
 
 | Method | Path | Purpose |
 |--------|------|---------|
+| GET | `/api/dispatchers` | list operators (workspaces) |
 | POST | `/api/simulate/{call_id}` | stream one demo call |
 | POST | `/api/simulate-all` | launch the full scenario (staggered) |
-| POST | `/api/ingest` | ingest a real transcript chunk `{call_id, chunk, final}` |
-| GET | `/api/state` | full snapshot (calls + incidents) — the frontend polls this |
+| POST | `/api/upload` | create an incident from a "recorded" call `{dispatcher_id, filename}` |
+| POST | `/api/merge` | approve a merge `{suggestion_id}` (or `{incident_a, incident_b}`) |
+| POST | `/api/suggestion/{id}/reject` | dismiss a merge suggestion |
+| POST | `/api/ingest` | ingest a real transcript chunk `{call_id, chunk, final, dispatcher_id}` |
+| GET | `/api/state` | full snapshot (calls + incidents + dispatchers + suggestions) — polled |
 | GET | `/api/demo-calls` | list available demo calls |
-| POST | `/api/reset` | clear all calls & incidents |
+| POST | `/api/reset` | clear all calls, incidents & suggestions |
 
-## Terminology
+## Data model
 
-Related calls are **clustered / linked / merged** into a shared incident.
+| Entity | Key fields |
+|--------|-----------|
+| **Dispatcher** | `dispatcher_id`, `name`, `color` (identity tint) |
+| **Call** | `call_id`, `transcript`, `analysis`, `color` (provenance), `dispatcher_id`, `incident_id` |
+| **Incident** | `incident_id`, `title`, `severity`, `call_ids`, `dispatcher_ids` (owners), `status` (open/merged), `merged` (field → per-source contributions), `locations` |
+| **MergeSuggestion** | `incident_a`, `incident_b`, `score` (explainable breakdown), `status` |
+
+Merging is **never automatic** — a suggestion is raised when incident similarity
+clears `0.55`, and only a dispatcher's approval unifies them.

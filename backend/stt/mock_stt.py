@@ -8,12 +8,12 @@ from __future__ import annotations
 from typing import Iterator
 
 from stt.base import STTEngine
-from demo_data import DEMO_CALLS
+from demo_data import ALL_CALLS
 
 
 class MockSTT(STTEngine):
     def stream_chunks(self, source: str) -> Iterator[str]:
-        call = DEMO_CALLS.get(source)
+        call = ALL_CALLS.get(source)
         if not call:
             return
         for chunk in call["chunks"]:

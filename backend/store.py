@@ -1,4 +1,4 @@
-"""In-memory storage for active calls and incidents.
+"""In-memory storage for active calls, incidents, dispatchers and suggestions.
 
 Hackathon-grade: a process-local singleton. Swap for Redis/DB later without
 touching callers — they only use the public methods here.
@@ -8,7 +8,7 @@ from __future__ import annotations
 import threading
 from typing import Dict, List, Optional
 
-from models import Call, Incident
+from models import Call, Incident, Dispatcher, MergeSuggestion
 
 # A fixed palette so each call gets a stable, distinguishable provenance color.
 PALETTE = [
@@ -20,19 +20,39 @@ PALETTE = [
     "#008080",  # teal
 ]
 
+# Seed dispatchers (the people working the call center). Each has a calm,
+# distinct identity tint used only for provenance, never as decoration.
+SEED_DISPATCHERS = [
+    Dispatcher(dispatcher_id="d-daria", name="דריה", color="#5b8def"),
+    Dispatcher(dispatcher_id="d-noa", name="נועה", color="#26a69a"),
+    Dispatcher(dispatcher_id="d-amir", name="אמיר", color="#c97bd8"),
+]
+
 
 class Store:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self.calls: Dict[str, Call] = {}
         self.incidents: Dict[str, Incident] = {}
+        self.dispatchers: Dict[str, Dispatcher] = {}
+        self.suggestions: Dict[str, MergeSuggestion] = {}
         self._color_idx = 0
+        self._inc_seq = 0
+        self._sug_seq = 0
+        self._seed_dispatchers()
+
+    def _seed_dispatchers(self) -> None:
+        for d in SEED_DISPATCHERS:
+            self.dispatchers[d.dispatcher_id] = d
 
     def reset(self) -> None:
         with self._lock:
             self.calls.clear()
             self.incidents.clear()
+            self.suggestions.clear()
             self._color_idx = 0
+            self._inc_seq = 0
+            self._sug_seq = 0
 
     def next_color(self) -> str:
         with self._lock:
@@ -40,6 +60,17 @@ class Store:
             self._color_idx += 1
             return color
 
+    def next_incident_id(self) -> str:
+        with self._lock:
+            self._inc_seq += 1
+            return f"inc-{self._inc_seq}"
+
+    def next_suggestion_id(self) -> str:
+        with self._lock:
+            self._sug_seq += 1
+            return f"sug-{self._sug_seq}"
+
+    # --- calls ---
     def upsert_call(self, call: Call) -> None:
         with self._lock:
             self.calls[call.call_id] = call
@@ -47,6 +78,10 @@ class Store:
     def get_call(self, call_id: str) -> Optional[Call]:
         return self.calls.get(call_id)
 
+    def active_calls(self) -> List[Call]:
+        return list(self.calls.values())
+
+    # --- incidents ---
     def upsert_incident(self, incident: Incident) -> None:
         with self._lock:
             self.incidents[incident.incident_id] = incident
@@ -54,11 +89,32 @@ class Store:
     def get_incident(self, incident_id: str) -> Optional[Incident]:
         return self.incidents.get(incident_id)
 
-    def active_calls(self) -> List[Call]:
-        return list(self.calls.values())
-
     def active_incidents(self) -> List[Incident]:
-        return list(self.incidents.values())
+        """Only incidents still standing (not merged away)."""
+        return [i for i in self.incidents.values() if i.status == "open"]
+
+    # --- dispatchers ---
+    def active_dispatchers(self) -> List[Dispatcher]:
+        return list(self.dispatchers.values())
+
+    # --- merge suggestions ---
+    def upsert_suggestion(self, sug: MergeSuggestion) -> None:
+        with self._lock:
+            self.suggestions[sug.suggestion_id] = sug
+
+    def get_suggestion(self, suggestion_id: str) -> Optional[MergeSuggestion]:
+        return self.suggestions.get(suggestion_id)
+
+    def pending_suggestions(self) -> List[MergeSuggestion]:
+        return [s for s in self.suggestions.values() if s.status == "pending"]
+
+    def suggestion_between(self, a: str, b: str) -> Optional[MergeSuggestion]:
+        """Find an existing pending suggestion for the same incident pair."""
+        pair = {a, b}
+        for s in self.suggestions.values():
+            if s.status == "pending" and {s.incident_a, s.incident_b} == pair:
+                return s
+        return None
 
 
 # Module-level singleton used across the app.

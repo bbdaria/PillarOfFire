@@ -62,3 +62,39 @@ DEMO_CALLS = {
         ],
     },
 }
+
+# Extra prerecorded calls used by the "upload a recording" flow. They are not
+# part of the live demo scenario but produce meaningful structured data (and a
+# cross-incident merge suggestion) when uploaded, simulating a real recording.
+UPLOAD_CALLS = {
+    "call-rec-1": {
+        "title": "הקלטה: עד נוסף - הרצל",
+        "chunks": [
+            "מקליט הודעה למוקד.",
+            "ראיתי את הפיצוץ ליד תחנת הדלק ברחוב הרצל בתל אביב.",
+            "יש הרבה עשן והגיעו כוחות כיבוי.",
+            "נראה שיש עוד פצוע אחד שלא טופל.",
+        ],
+    },
+    "call-rec-2": {
+        "title": "הקלטה: היפוך משאית - כביש 6",
+        "chunks": [
+            "הקלטה מהשטח.",
+            "משאית התהפכה בכביש 6 ליד חדרה.",
+            "יש פקק ענק והנהג לכוד בתא.",
+            "צריך חילוץ וכבאית בדחיפות.",
+        ],
+    },
+}
+
+ALL_CALLS = {**DEMO_CALLS, **UPLOAD_CALLS}
+
+# Which dispatcher handles each scripted demo call. call-1 (Daria) and call-2
+# (Noa) describe the SAME gas-station event from two operators — this is what
+# makes the headline merge suggestion cross-dispatcher.
+CALL_DISPATCHER = {
+    "call-1": "d-daria",
+    "call-2": "d-noa",
+    "call-3": "d-noa",
+    "call-4": "d-daria",
+}

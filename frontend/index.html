@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>עמוד האש · Pillar of Fire</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
   <header class="topbar">
@@ -13,59 +13,71 @@
       <span class="flame">🔥</span>
       <div>
         <h1>עמוד האש <span class="en">Pillar of Fire</span></h1>
-        <p class="tagline">לוח בקרה למוקדני חירום · זיהוי אירועים מתפתחים בזמן אמת</p>
+        <p class="tagline">מרחב עבודה אישי למוקדנית · איחוד שיחות חכם</p>
       </div>
     </div>
+
+    <div class="who">
+      <span class="who-label">מחוברת כ־</span>
+      <div class="who-select">
+        <span class="who-avatar" id="who-avatar"></span>
+        <select id="dispatcher-select" aria-label="בחירת מוקדנית"></select>
+      </div>
+    </div>
+
     <div class="controls">
-      <button id="btn-all" class="primary">▶ הדמה את כל השיחות</button>
-      <span id="call-buttons" class="call-buttons"></span>
-      <button id="btn-reset" class="ghost">איפוס</button>
+      <button id="btn-upload" class="ghost">⬆ העלאת הקלטה</button>
+      <input id="file-input" type="file" accept="audio/*" hidden />
+      <button id="btn-all" class="primary">▶ הדמיית שיחות נכנסות</button>
+      <button id="btn-reset" class="ghost subtle">איפוס</button>
     </div>
   </header>
 
   <div class="safety-banner">
-    ⚠️ מערכת תומכת החלטה בלבד — אינה מחליפה שיקול דעת אנושי או נהלי חירום רשמיים.
+    מערכת תומכת־החלטה בלבד — אינה מחליפה שיקול דעת אנושי או נהלי חירום רשמיים.
   </div>
 
-  <main class="grid">
-    <!-- Column A: calls -->
-    <section class="col col-calls">
-      <div class="panel">
-        <h2>שיחות פעילות <span class="count" id="calls-count">0</span></h2>
-        <div id="calls-list" class="calls-list"></div>
+  <main class="workspace">
+    <!-- Personal workspace: this dispatcher's open incident cards -->
+    <section class="pane incidents-pane">
+      <div class="pane-head">
+        <h2>האירועים שלי <span class="count" id="incidents-count">0</span></h2>
+        <span class="pane-hint">לחצי על כרטיס לפתיחת פרטים</span>
       </div>
-      <div class="panel">
-        <h2>תמלול חי <span class="sub" id="transcript-call"></span></h2>
-        <div id="transcript" class="transcript" dir="rtl">בחר שיחה כדי לראות תמלול…</div>
-      </div>
-      <div class="panel">
-        <h2>פרטים שחולצו</h2>
-        <div id="details" class="details">—</div>
-      </div>
+      <div id="incidents" class="incident-grid"></div>
     </section>
 
-    <!-- Column B: map + incidents -->
-    <section class="col col-mid">
-      <div class="panel">
-        <h2>מפת מיקומים</h2>
-        <div id="map" class="map"></div>
+    <!-- Shared situational map across all dispatchers -->
+    <aside class="pane map-pane">
+      <div class="pane-head">
+        <h2>מפה משותפת</h2>
+        <span class="pane-hint">כלל־מערכתית</span>
       </div>
-      <div class="panel">
-        <h2>אירועים פעילים <span class="count" id="incidents-count">0</span></h2>
-        <div id="incidents-list" class="incidents-list"></div>
+      <div id="map" class="map"></div>
+      <div class="legend">
+        <div class="legend-row">
+          <span class="legend-title">חומרה</span>
+          <span class="legend-item"><i class="sw" style="background:var(--low)"></i>נמוכה</span>
+          <span class="legend-item"><i class="sw" style="background:var(--medium)"></i>בינונית</span>
+          <span class="legend-item"><i class="sw" style="background:var(--high)"></i>גבוהה</span>
+          <span class="legend-item"><i class="sw" style="background:var(--critical)"></i>קריטית</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-title">גודל</span>
+          <span class="legend-item"><i class="sw ring sm"></i><i class="sw ring lg"></i>מספר שיחות מאוחדות</span>
+        </div>
       </div>
-    </section>
-
-    <!-- Column C: incident detail -->
-    <section class="col col-detail">
-      <div class="panel panel-grow">
-        <h2>פרטי אירוע</h2>
-        <div id="incident-detail" class="incident-detail">בחר אירוע מהרשימה…</div>
-      </div>
-    </section>
+    </aside>
   </main>
 
+  <!-- Focused incident detail (progressive disclosure) -->
+  <div id="scrim" class="scrim hidden"></div>
+  <aside id="drawer" class="drawer hidden" aria-hidden="true"></aside>
+
+  <div id="toast" class="toast hidden"></div>
+  <div id="seg-tip" class="seg-tip hidden"></div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

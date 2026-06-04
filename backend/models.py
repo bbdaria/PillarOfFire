@@ -45,6 +45,13 @@ class CallAnalysis(BaseModel):
     recommended_next_steps: List[str] = Field(default_factory=list)
 
 
+class Dispatcher(BaseModel):
+    """A call-center operator. Each has her own workspace of incidents."""
+    dispatcher_id: str
+    name: str
+    color: str = "#888888"  # identity tint (used sparingly, e.g. provenance)
+
+
 class Call(BaseModel):
     call_id: str
     timestamp: str  # ISO datetime
@@ -54,6 +61,7 @@ class Call(BaseModel):
     transcript: str = ""
     analysis: CallAnalysis = Field(default_factory=CallAnalysis)
     incident_id: Optional[str] = None
+    dispatcher_id: Optional[str] = None  # who is handling this call
 
 
 class MatchScore(BaseModel):
@@ -73,9 +81,30 @@ class Incident(BaseModel):
     title: str = ""
     event_type: str = "unknown"
     call_ids: List[str] = Field(default_factory=list)
+    dispatcher_ids: List[str] = Field(default_factory=list)  # owners (may be many after merge)
+    status: str = "open"  # open | merged
+    merged_into: Optional[str] = None  # if merged, the surviving incident id
     severity: Severity = Field(default_factory=Severity)
-    # Merged evidence: field name -> list of {value, call_id} contributions.
+    # Merged evidence: field name -> list of {value, call_id, dispatcher_id} contributions.
     merged: Dict[str, list] = Field(default_factory=dict)
+    # Narrative summary as ordered segments. Each segment is
+    # {"text": str, "sources": [{call_id, color, dispatcher_id, detail}]}.
+    # Segments with sources are the hoverable, provenance-traced phrases.
+    narrative: List[dict] = Field(default_factory=list)
     locations: List[Location] = Field(default_factory=list)
     recommended_next_steps: List[str] = Field(default_factory=list)
     match_scores: List[MatchScore] = Field(default_factory=list)
+
+
+class MergeSuggestion(BaseModel):
+    """A proposed (never automatic) merge between two incidents.
+
+    incident_a is usually the newer incident; incident_b the existing candidate.
+    Either may belong to a different dispatcher — merging is cross-dispatcher.
+    """
+    suggestion_id: str
+    created_at: str
+    incident_a: str
+    incident_b: str
+    score: MatchScore
+    status: str = "pending"  # pending | approved | rejected
