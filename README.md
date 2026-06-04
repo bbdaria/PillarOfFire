@@ -127,7 +127,6 @@ responders see **why** a merge was suggested — nothing is merged silently.
 | GET | `/api/demo-calls` | list available demo calls |
 | POST | `/api/reset` | clear all calls, incidents & suggestions |
 
-<<<<<<< HEAD
 ## Data model
 
 | Entity | Key fields |
@@ -141,4 +140,3 @@ Merging is **never automatic** — a suggestion is raised when incident similari
 clears `0.55`, and only a dispatcher's approval unifies them.
 =======
 
->>>>>>> f38e85499ac5eec0ccd8424acd8cf14b4b6990e6
