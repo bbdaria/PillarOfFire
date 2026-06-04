@@ -19,6 +19,10 @@ GAZETTEER = {
     "כביש 6 חדרה": {"normalized": "כביש 6, מחלף חדרה", "lat": 32.4370, "lng": 34.9540},
     "כביש 6": {"normalized": "כביש 6, מחלף חדרה", "lat": 32.4370, "lng": 34.9540},
     "חדרה": {"normalized": "אזור חדרה", "lat": 32.4340, "lng": 34.9196},
+    # Near the Re'im / Nova festival site — used to demo the known-event alert.
+    "רעים": {"normalized": "אזור רעים, עוטף עזה", "lat": 31.3855, "lng": 34.4512},
+    "ראם": {"normalized": "אזור רעים, עוטף עזה", "lat": 31.3855, "lng": 34.4512},
+    "מסיבה ברעים": {"normalized": "מתחם המסיבה, רעים", "lat": 31.3850, "lng": 34.4500},
 }
 
 DEMO_CALLS = {
@@ -61,6 +65,17 @@ DEMO_CALLS = {
             "הקשר גרוע, אני לא...",
         ],
     },
+    # Headline known-event scenario: gunfire reports next to the Nova festival
+    # at Re'im. This incident fires the "known event nearby" context alert.
+    "call-5": {
+        "title": "דיווח על ירי - רעים",
+        "chunks": [
+            "מוקד? אני במסיבה ברעים, יש ירי!",
+            "אנשים בורחים לכל הכיוונים, יש המון אנשים פה.",
+            "אני שומע יריות, נראה לי שיש פצועים.",
+            "תשלחו כוחות מהר, יש אלפי אנשים במתחם!",
+        ],
+    },
 }
 
 # Extra prerecorded calls used by the "upload a recording" flow. They are not
@@ -97,4 +112,5 @@ CALL_DISPATCHER = {
     "call-2": "d-noa",
     "call-3": "d-noa",
     "call-4": "d-daria",
+    "call-5": "d-amir",
 }

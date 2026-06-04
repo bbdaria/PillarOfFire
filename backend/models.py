@@ -108,3 +108,64 @@ class MergeSuggestion(BaseModel):
     incident_b: str
     score: MatchScore
     status: str = "pending"  # pending | approved | rejected
+
+
+# --- Known Large Events (the pre-known intelligence layer) -----------------
+
+class EventLocation(BaseModel):
+    """Where a known large event takes place. radius_meters draws its area."""
+    raw_address: str = ""
+    normalized_address: str = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    radius_meters: int = 0
+
+
+class KnownEvent(BaseModel):
+    """A planned / pre-known large gathering (concert, demo, game, …).
+
+    This is NOT an emergency incident. It is reference intelligence entered in
+    advance (manually or via Excel import) so that, if an emergency is detected
+    near it, the dispatcher gets proactive context.
+    """
+    id: str
+    name: str = ""
+    type: str = "other"  # political|cultural|private|religious|sports|festival|other
+    description: str = ""
+    expected_participants: int = 0
+    start_time: str = ""  # ISO datetime
+    end_time: str = ""    # ISO datetime
+    location: EventLocation = Field(default_factory=EventLocation)
+    organizer: str = ""
+    police_notes: str = ""
+    risk_notes: str = ""
+    status: str = "scheduled"  # scheduled|active|ended|cancelled
+    source: str = "manual"     # manual|excel_import
+
+
+class EventContextMatch(BaseModel):
+    """The result of matching ONE emergency incident to ONE known event.
+
+    The first six fields are the matching contract from the spec; the rest are
+    denormalized event details so the UI can render the alert without a second
+    lookup. Only time-relevant matches (active / soon / recently ended) are
+    surfaced as alerts — see matchIncidentToKnownEvents.
+    """
+    known_event_id: str
+    distance_meters: int = 0
+    relation: str = "nearby"        # inside | nearby
+    time_relation: str = "scheduled"  # active | starting_soon | recently_ended | scheduled
+    alert_level: str = "info"       # info | important | critical
+    reason: str = ""
+    # --- denormalized for display ---
+    name: str = ""
+    type: str = ""
+    expected_participants: int = 0
+    start_time: str = ""
+    end_time: str = ""
+    organizer: str = ""
+    police_notes: str = ""
+    risk_notes: str = ""
+    suggestion: str = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None

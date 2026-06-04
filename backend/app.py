@@ -36,12 +36,18 @@ from store import store
 from stt import get_stt_engine
 from llm import get_analyzer
 import matching
+import known_events
 from demo_data import DEMO_CALLS, UPLOAD_CALLS, CALL_DISPATCHER
+from demo_known_events import seed_known_events
 
 app = FastAPI(title="Pillar of Fire")
 
 stt = get_stt_engine()
 analyzer = get_analyzer()
+
+# Seed the pre-known intelligence layer once at startup. These are reference
+# data and persist across /api/reset (only the live call picture is cleared).
+seed_known_events()
 
 CHUNK_DELAY_SEC = float(os.environ.get("CHUNK_DELAY_SEC", "1.1"))
 DEFAULT_DISPATCHER = "d-daria"
@@ -150,8 +156,10 @@ async def simulate_all(body: SimulateAllBody | None = None):
     others = [d.dispatcher_id for d in store.active_dispatchers()
               if d.dispatcher_id != primary]
     partner = others[0] if others else primary
+    # call-5 (gunfire near Re'im) lands in the primary workspace so the logged-in
+    # dispatcher sees the headline "known event nearby" context alert.
     routing = {"call-1": primary, "call-2": partner,
-               "call-3": primary, "call-4": primary}
+               "call-3": primary, "call-4": primary, "call-5": primary}
 
     async def runner():
         # Sequential: each call finishes (and opens its incident) before the
@@ -268,13 +276,86 @@ async def demo_calls():
     return [{"call_id": cid, "title": spec["title"]} for cid, spec in DEMO_CALLS.items()]
 
 
+# --- Known Large Events (the pre-known intelligence layer) -----------------
+
+@app.get("/api/known-events")
+async def list_known_events():
+    """All known large events, with live status recomputed from the clock."""
+    return [known_events.refresh_status(e).model_dump()
+            for e in store.all_known_events()]
+
+
+class KnownEventBody(BaseModel):
+    name: str
+    type: str = "other"
+    expected_participants: int = 0
+    start_time: str = ""
+    end_time: str = ""
+    address: str = ""
+    city: str = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    radius_meters: int = 0
+    organizer: str = ""
+    description: str = ""
+    police_notes: str = ""
+    risk_notes: str = ""
+
+
+@app.post("/api/known-events")
+async def create_known_event(body: KnownEventBody):
+    """Manually create one known large event (the KnownEventForm submit)."""
+    if not body.name.strip():
+        raise HTTPException(400, "event name is required")
+    evt = known_events.create_known_event(body.model_dump(), source="manual")
+    store.upsert_known_event(evt)
+    return {"ok": True, "event": evt.model_dump()}
+
+
+class ImportPreviewBody(BaseModel):
+    filename: str
+    content_b64: str
+
+
+@app.post("/api/known-events/import/preview")
+async def import_preview(body: ImportPreviewBody):
+    """Parse + validate an uploaded .csv/.xlsx WITHOUT inserting anything."""
+    try:
+        content = known_events.decode_upload(body.content_b64)
+        return known_events.preview_import(body.filename, content)
+    except Exception as e:  # malformed upload → clear, non-fatal error
+        raise HTTPException(400, f"could not parse file: {e}")
+
+
+class ImportConfirmBody(BaseModel):
+    payloads: list
+
+
+@app.post("/api/known-events/import/confirm")
+async def import_confirm(body: ImportConfirmBody):
+    """Insert the validated rows the user confirmed from the preview."""
+    created = known_events.import_known_events(body.payloads)
+    return {"ok": True, "imported": len(created),
+            "events": [e.model_dump() for e in created]}
+
+
 @app.get("/api/state")
 async def state():
+    # Attach per-incident known-event context matches (computed fresh so they
+    # reflect the current time and the latest known events).
+    incidents = []
+    for inc in store.active_incidents():
+        d = inc.model_dump()
+        d["event_context"] = [m.model_dump()
+                              for m in known_events.match_incident_to_known_events(inc)]
+        incidents.append(d)
     return JSONResponse({
         "calls": [c.model_dump() for c in store.active_calls()],
-        "incidents": [i.model_dump() for i in store.active_incidents()],
+        "incidents": incidents,
         "dispatchers": [d.model_dump() for d in store.active_dispatchers()],
         "suggestions": [s.model_dump() for s in store.pending_suggestions()],
+        "known_events": [known_events.refresh_status(e).model_dump()
+                         for e in store.all_known_events()],
         "server_time": _now(),
     })
 

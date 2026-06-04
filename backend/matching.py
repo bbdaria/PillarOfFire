@@ -122,7 +122,8 @@ def best_incident_for(new: Call) -> Tuple[Optional[Incident], Optional[MatchScor
 # --- merging / incident assembly ------------------------------------------
 
 HEB_EVENT = {"explosion": "פיצוץ", "fire": "שריפה", "traffic_accident": "תאונת דרכים",
-             "medical": "אירוע רפואי", "hazmat": "חומ\"ס", "unknown": "אירוע"}
+             "shooting": "אירוע ירי", "medical": "אירוע רפואי", "hazmat": "חומ\"ס",
+             "unknown": "אירוע"}
 HEB_HAZARD = {"gas": "גז", "smoke": "עשן", "fire": "אש",
               "explosion": "פיצוץ", "vehicle": "כלי רכב"}
 # How each hazard reads inside the narrative paragraph.

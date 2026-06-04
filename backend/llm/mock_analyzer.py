@@ -24,6 +24,7 @@ EVENT_KEYWORDS = [
     ("explosion", ["פיצוץ", "התפוצצות", "פצצה"]),
     ("fire", ["שריפה", "שרפה", "אש", "עולות באש", "עולה באש", "בוער"]),
     ("traffic_accident", ["תאונה", "התנגש", "התנגשו", "תאונת דרכים", "פגע"]),
+    ("shooting", ["ירי", "יריות", "יורים", "נשק", "אקדח", "מטח"]),
     ("medical", ["התקף", "לא נושם", "מחוסר הכרה", "דימום"]),
     ("hazmat", ["דליפה", "כימיקל", "רעיל"]),
 ]
@@ -176,7 +177,8 @@ class MockAnalyzer(Analyzer):
     def _summarize(event_type, location, hazards, casualties) -> str:
         labels = {
             "explosion": "פיצוץ", "fire": "שריפה", "traffic_accident": "תאונת דרכים",
-            "medical": "אירוע רפואי", "hazmat": "חומ\"ס", "unknown": "אירוע לא מזוהה",
+            "shooting": "אירוע ירי", "medical": "אירוע רפואי", "hazmat": "חומ\"ס",
+            "unknown": "אירוע לא מזוהה",
         }
         parts = [labels.get(event_type, event_type)]
         if location.normalized:
@@ -199,8 +201,8 @@ def score_severity(event_type, hazards, casualties, distress, num_calls: int = 1
     score = 1
     reasons: List[str] = []
 
-    base = {"explosion": 5, "fire": 4, "hazmat": 5, "traffic_accident": 3,
-            "medical": 3, "unknown": 1}.get(event_type, 1)
+    base = {"explosion": 5, "fire": 4, "hazmat": 5, "shooting": 6,
+            "traffic_accident": 3, "medical": 3, "unknown": 1}.get(event_type, 1)
     score += base
     if base > 1:
         reasons.append(f"סוג אירוע ({event_type})")

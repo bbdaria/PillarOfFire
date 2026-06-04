@@ -2,7 +2,7 @@
 // Polls /api/state and re-renders. Client state = who I am + which incident is open.
 
 const POLL_MS = 800;
-const state = { calls: [], incidents: [], dispatchers: [], suggestions: [] };
+const state = { calls: [], incidents: [], dispatchers: [], suggestions: [], known_events: [] };
 let me = localStorage.getItem("dispatcher_id") || "d-daria";
 let openIncidentId = null;
 let lastDrawerSig = null; // skip drawer re-render (and tooltip teardown) when unchanged
@@ -108,6 +108,7 @@ function renderIncidents() {
         ${live ? `<span class="chip live"><span class="dot pulse" style="background:var(--link)"></span>מתמלל…</span>` : ""}
         <span class="chip">🔗 ${nCalls} ${nCalls === 1 ? "שיחה" : "שיחות"}</span>
         ${sugg.length ? `<span class="chip suggestion">⚠ הצעת איחוד</span>` : ""}
+        ${(inc.event_context && inc.event_context.length) ? `<span class="chip known-near">📍 אירוע ידוע בקרבת מקום</span>` : ""}
         <span class="owners">${owners}</span>
       </div>
     </div>`;
@@ -128,7 +129,8 @@ function drawerSignature(inc) {
   const calls = inc.call_ids.map((id) => { const c = callById(id) || {}; return [id, c.status, c.transcript]; });
   const sug = suggestionsFor(inc.incident_id).map((x) => x.s.suggestion_id);
   return JSON.stringify([inc.incident_id, inc.title, inc.severity,
-    inc.narrative, inc.dispatcher_ids, inc.recommended_next_steps, calls, sug]);
+    inc.narrative, inc.dispatcher_ids, inc.recommended_next_steps, calls, sug,
+    inc.event_context]);
 }
 document.getElementById("scrim").onclick = closeDrawer;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
@@ -255,6 +257,7 @@ function renderDrawer() {
     </div>
     <div class="dr-body ${justMerged ? "merge-flash" : ""}">
       ${sugg.length ? `<div class="section">${sugg.map(renderSuggestion).join("")}</div>` : ""}
+      ${window.renderContextAlertHTML ? window.renderContextAlertHTML(inc) : ""}
       <div class="section">
         <div class="section-title">תמונת מצב · רחפי על משפט לצפייה במקורות</div>
         ${narrative}
@@ -277,6 +280,7 @@ function renderDrawer() {
   document.getElementById("dr-close").onclick = closeDrawer;
   drawer.querySelectorAll("[data-merge]").forEach((b) => (b.onclick = () => doMerge(b.dataset.merge)));
   drawer.querySelectorAll("[data-reject]").forEach((b) => (b.onclick = () => doReject(b.dataset.reject)));
+  if (window.bindContextAlert) window.bindContextAlert(drawer);
   bindSegHovers(drawer);
 }
 
@@ -323,6 +327,20 @@ function sevColor(label) {
     : label === "medium" ? "#d6a30b" : "#3fb950";
 }
 
+// --- theme (light / dark) ---
+function applyTheme(t) {
+  document.body.classList.toggle("light", t === "light");
+  const btn = document.getElementById("btn-theme");
+  if (btn) btn.textContent = t === "light" ? "☀️" : "🌙";
+}
+let theme = localStorage.getItem("theme") || "dark";
+applyTheme(theme);
+document.getElementById("btn-theme").onclick = () => {
+  theme = theme === "light" ? "dark" : "light";
+  localStorage.setItem("theme", theme);
+  applyTheme(theme);
+};
+
 // --- controls ---
 document.getElementById("btn-all").onclick = () => { api("/api/simulate-all", "POST", { dispatcher_id: me }); toast("מדמה שיחות נכנסות…"); };
 document.getElementById("btn-reset").onclick = async () => {
@@ -343,6 +361,7 @@ function render() {
   renderDispatcherSelect();
   renderIncidents();
   renderMap();
+  if (window.renderKnownLayer) window.renderKnownLayer(); // subtle known-events map layer
   if (openIncidentId) {
     const inc = incById(openIncidentId);
     if (!inc) { closeDrawer(); return; }
@@ -358,6 +377,7 @@ async function poll() {
     state.incidents = s.incidents || [];
     state.dispatchers = s.dispatchers || [];
     state.suggestions = s.suggestions || [];
+    state.known_events = s.known_events || [];
     render();
     // track call counts AFTER render so the merge-flash fires once
     state.incidents.forEach((inc) => { knownCalls[inc.incident_id] = inc.call_ids.length; });

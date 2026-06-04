@@ -320,3 +320,214 @@ details.match summary { cursor: pointer; color: var(--muted); font-size: 12px; }
   .map-pane { position: static; }
   .map { height: 300px; }
 }
+
+/* ========================================================================== */
+/* Known Large Events — the calm, contextual intelligence layer.              */
+/* Deliberately subdued: slate/neutral tones, never emergency-bright unless   */
+/* an active context alert escalates it.                                      */
+/* ========================================================================== */
+
+/* Card chip + map legend swatch */
+.chip.known-near { background: #1b2530; border-color: #2c3a4b; color: #9fb3cc; }
+.sw.ke-sw {
+  width: 13px; height: 13px; border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg); background: #8ea2c0; border: 1.5px solid #aeb9cc;
+}
+
+/* Known-event map pins (teardrop marker with the event-type emoji) */
+.ke-pin-wrap { background: none; border: none; }
+.ke-pin {
+  width: 30px; height: 30px; border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: #8ea2c0; border: 2px solid #c3ccdb;
+  box-shadow: 0 2px 6px rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+}
+.ke-pin-emoji {
+  transform: rotate(45deg); font-size: 15px; line-height: 1;
+  filter: saturate(.85) brightness(1.05);
+}
+.ke-pin-alert.ke-pin-important { background: var(--medium); border-color: #f0d486; }
+.ke-pin-alert.ke-pin-critical {
+  background: var(--high); border-color: #f8c89a;
+  animation: ke-pin-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ke-pin-pulse {
+  0%, 100% { box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+  50% { box-shadow: 0 0 0 6px rgba(240,136,62,.35), 0 2px 6px rgba(0,0,0,.5); }
+}
+
+/* --- Incident drawer: known-event context alert (progressive disclosure) --- */
+.ctx-card {
+  background: #16202b; border: 1px solid #28384a; border-inline-start: 3px solid #7c8aa5;
+  border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+  margin-bottom: 10px;
+}
+.ctx-card.ctx-important { border-inline-start-color: var(--medium); background: #1d2330; }
+.ctx-card.ctx-critical { border-inline-start-color: var(--high); background: #241f1c; }
+.ctx-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.ctx-icon { font-size: 16px; }
+.ctx-headtext { color: var(--text); }
+.ctx-headtext b { color: #fff; }
+.ctx-level {
+  margin-inline-start: auto; font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 999px; white-space: nowrap;
+}
+.ctx-level-info { background: #243240; color: #9fb3cc; }
+.ctx-level-important { background: var(--medium); color: #1a1006; }
+.ctx-level-critical { background: var(--high); color: #1a1006; }
+.ctx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 13px; }
+.ctx-grid .ctx-span { grid-column: 1 / -1; }
+.ctx-k { color: var(--muted); font-size: 11px; display: block; }
+.ctx-notes { background: rgba(0,0,0,.18); border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--muted); }
+.ctx-note { line-height: 1.5; }
+.ctx-suggest { font-size: 13px; color: #d2b372; line-height: 1.5; }
+.ctx-actions { display: flex; gap: 8px; }
+.ctx-btn {
+  background: var(--panel-3); color: var(--text); border: 1px solid var(--border);
+  padding: 6px 12px; border-radius: 8px; font-size: 12px;
+}
+.ctx-btn.ghost { background: transparent; color: var(--muted); }
+
+/* --- Modal shell (calendar / detail / form / import) --- */
+.modal {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: min(560px, 94vw); max-height: 88vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow); z-index: 80;
+}
+.modal.wide { width: min(900px, 96vw); }
+.modal.hidden { display: none; }
+.modal-head {
+  position: sticky; top: 0; background: var(--panel); z-index: 2;
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px; border-bottom: 1px solid var(--border-soft);
+}
+.modal-title { font-size: 17px; font-weight: 700; }
+.modal-head-actions { margin-inline-start: auto; display: flex; align-items: center; gap: 8px; }
+.modal-foot {
+  display: flex; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border-soft);
+  position: sticky; bottom: 0; background: var(--panel);
+}
+.ke-action {
+  background: var(--accent); color: #1a1006; border: none; font-weight: 700;
+  padding: 8px 14px; border-radius: 8px; font-size: 13px;
+}
+.ke-action.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font-weight: 600; }
+.ke-action.sm { padding: 6px 10px; font-size: 12px; }
+.ke-action:disabled { opacity: .5; cursor: not-allowed; }
+
+/* --- Calendar filters + list --- */
+.ke-filters {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 14px 20px; border-bottom: 1px solid var(--border-soft);
+}
+.ke-in {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 7px 10px; font-size: 13px; font-family: inherit; outline: none;
+}
+.ke-in.sm { width: 120px; }
+.ke-in:focus { border-color: var(--link); }
+.ke-lbl { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.ke-list { padding: 8px 20px 20px; }
+.ke-day { margin-top: 14px; }
+.ke-day-head {
+  color: var(--muted); font-size: 12px; font-weight: 600; padding: 6px 0;
+  border-bottom: 1px solid var(--border-soft); margin-bottom: 6px;
+}
+.ke-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 8px;
+  border-radius: 8px; cursor: pointer; transition: background .12s;
+}
+.ke-row:hover { background: var(--panel-2); }
+.ke-emoji { font-size: 18px; flex: none; }
+.ke-row-main { flex: 1; min-width: 0; }
+.ke-row-name { font-weight: 600; }
+.ke-row-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.ke-time { color: var(--muted); font-size: 12px; white-space: nowrap; flex: none; }
+.ke-status { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; flex: none; }
+.ke-status-scheduled { background: #243240; color: #9fb3cc; }
+.ke-status-active { background: var(--low); color: #08210f; }
+.ke-status-ended { background: var(--panel-3); color: var(--muted); }
+.ke-status-cancelled { background: #2c2230; color: #b08bbf; text-decoration: line-through; }
+
+/* --- Detail modal --- */
+.kd-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.kd-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.kd-badge { background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); font-size: 12px; padding: 3px 10px; border-radius: 999px; }
+.kd-badge.st-active { background: var(--low); color: #08210f; border-color: transparent; }
+.kd-badge.src { font-size: 11px; }
+.kd-row { display: flex; gap: 12px; align-items: baseline; }
+.kd-k { color: var(--muted); min-width: 110px; flex: none; font-size: 13px; }
+.kd-v { line-height: 1.5; }
+
+/* --- Form --- */
+.ke-form { padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+.ke-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+.ke-field.wide { grid-column: 1 / -1; }
+.ke-field input, .ke-field select, .ke-field textarea {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none;
+}
+.ke-field input:focus, .ke-field select:focus, .ke-field textarea:focus { border-color: var(--link); }
+.ke-hint { color: var(--muted-2); font-size: 12px; line-height: 1.5; }
+.ke-hint.wide { grid-column: 1 / -1; }
+
+/* --- Import --- */
+.ke-import-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.ke-import-summary { font-size: 13px; color: var(--muted); }
+.ke-import-summary .ok, .ke-table td.ok { color: var(--low); font-weight: 600; }
+.ke-import-summary .bad, .ke-import-section.bad { color: var(--high); }
+.ke-import-section { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 6px; }
+.ke-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ke-table th, .ke-table td { border: 1px solid var(--border); padding: 5px 8px; text-align: start; }
+.ke-table th { color: var(--muted); font-weight: 600; background: var(--panel-2); }
+.ke-table tr.bad td { color: #f0a58c; background: rgba(248,81,73,.07); }
+
+/* Filtered-events map (inside the "show on map" modal) */
+.ke-map {
+  height: 65vh; min-height: 340px; margin: 0; border-block: 1px solid var(--border-soft);
+}
+.ke-map .leaflet-container { background: var(--bg); }
+
+/* ========================================================================== */
+/* Light mode — overrides the dark defaults when <body> has the .light class.  */
+/* Most surfaces use CSS variables, so re-pointing the palette covers them;    */
+/* a few hardcoded dark accents are re-stated below.                           */
+/* ========================================================================== */
+body.light {
+  --bg: #eef1f6;
+  --panel: #ffffff;
+  --panel-2: #f1f4f9;
+  --panel-3: #e6ebf2;
+  --border: #d3dae5;
+  --border-soft: #e4e9f0;
+  --text: #1a2230;
+  --muted: #5a6878;
+  --muted-2: #8694a5;
+  --accent: #f4621f;
+  --link: #2563eb;
+  --low: #2e9e4d;
+  --medium: #c98a00;
+  --high: #e06a26;
+  --critical: #e23b30;
+  --shadow: 0 10px 36px rgba(31,45,68,.18);
+}
+body.light .leaflet-container { background: #dde4ec; }
+body.light .safety-banner { background: #fdf4e3; color: #9a6b16; border-bottom-color: #f0e2c4; }
+body.light .chip.suggestion { background: #fdeccd; border-color: #e9cf9a; color: #9a6b16; }
+body.light .chip.known-near { background: #eef2f8; border-color: #d3dae5; color: #41576f; }
+body.light .card.has-suggestion { border-color: #e9cf9a; }
+body.light .suggest-card { background: #fdf6e8; border-color: #e9cf9a; }
+body.light .suggest-head { color: #9a6b16; }
+body.light .suggest-body b { color: #1a2230; }
+body.light .ctx-card { background: #f4f7fb; border-color: #d8e0ea; border-inline-start-color: #8ea2c0; }
+body.light .ctx-card.ctx-important { background: #fdf6e8; }
+body.light .ctx-card.ctx-critical { background: #fdeee6; }
+body.light .ctx-notes { background: rgba(31,45,68,.05); }
+body.light .ctx-suggest { color: #9a6b16; }
+body.light .ctx-level-info { background: #e2e9f1; color: #41576f; }
+body.light .ke-status-scheduled { background: #e2e9f1; color: #41576f; }
+body.light .ke-status-ended { background: #e6ebf2; color: var(--muted); }
+body.light .sev-badge.sev-critical { color: #fff; }
+body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }

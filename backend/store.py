@@ -8,7 +8,7 @@ from __future__ import annotations
 import threading
 from typing import Dict, List, Optional
 
-from models import Call, Incident, Dispatcher, MergeSuggestion
+from models import Call, Incident, Dispatcher, MergeSuggestion, KnownEvent
 
 # A fixed palette so each call gets a stable, distinguishable provenance color.
 PALETTE = [
@@ -36,9 +36,13 @@ class Store:
         self.incidents: Dict[str, Incident] = {}
         self.dispatchers: Dict[str, Dispatcher] = {}
         self.suggestions: Dict[str, MergeSuggestion] = {}
+        # Known large events: the pre-known intelligence layer. Reference data,
+        # so it deliberately SURVIVES reset() (unlike live calls/incidents).
+        self.known_events: Dict[str, KnownEvent] = {}
         self._color_idx = 0
         self._inc_seq = 0
         self._sug_seq = 0
+        self._evt_seq = 0
         self._seed_dispatchers()
 
     def _seed_dispatchers(self) -> None:
@@ -46,6 +50,10 @@ class Store:
             self.dispatchers[d.dispatcher_id] = d
 
     def reset(self) -> None:
+        """Clear the live picture (calls/incidents/suggestions).
+
+        Known events are pre-known reference data and are intentionally kept.
+        """
         with self._lock:
             self.calls.clear()
             self.incidents.clear()
@@ -115,6 +123,22 @@ class Store:
             if s.status == "pending" and {s.incident_a, s.incident_b} == pair:
                 return s
         return None
+
+    # --- known large events ---
+    def next_known_event_id(self) -> str:
+        with self._lock:
+            self._evt_seq += 1
+            return f"evt-{self._evt_seq}"
+
+    def upsert_known_event(self, evt: KnownEvent) -> None:
+        with self._lock:
+            self.known_events[evt.id] = evt
+
+    def get_known_event(self, event_id: str) -> Optional[KnownEvent]:
+        return self.known_events.get(event_id)
+
+    def all_known_events(self) -> List[KnownEvent]:
+        return list(self.known_events.values())
 
 
 # Module-level singleton used across the app.

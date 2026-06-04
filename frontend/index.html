@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>עמוד האש · Pillar of Fire</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="style.css?v=4" />
+  <link rel="stylesheet" href="style.css?v=7" />
 </head>
 <body>
   <header class="topbar">
@@ -26,6 +26,8 @@
     </div>
 
     <div class="controls">
+      <button id="btn-theme" class="ghost subtle" title="מצב בהיר / כהה" aria-label="החלפת מצב תצוגה">🌙</button>
+      <button id="btn-calendar" class="ghost">📅 לוח אירועים ידועים</button>
       <button id="btn-upload" class="ghost">⬆ העלאת הקלטה</button>
       <input id="file-input" type="file" accept="audio/*" hidden />
       <button id="btn-all" class="primary">▶ הדמיית שיחות נכנסות</button>
@@ -66,6 +68,10 @@
           <span class="legend-title">גודל</span>
           <span class="legend-item"><i class="sw ring sm"></i><i class="sw ring lg"></i>מספר שיחות מאוחדות</span>
         </div>
+        <div class="legend-row">
+          <span class="legend-title">ידוע</span>
+          <span class="legend-item"><i class="sw ke-sw"></i>אירוע ידוע המתקיים היום</span>
+        </div>
       </div>
     </aside>
   </main>
@@ -74,10 +80,15 @@
   <div id="scrim" class="scrim hidden"></div>
   <aside id="drawer" class="drawer hidden" aria-hidden="true"></aside>
 
+  <!-- Known-events modals (calendar / form / import) mount here -->
+  <div id="ke-scrim" class="scrim hidden"></div>
+  <div id="ke-modal" class="modal hidden" role="dialog" aria-hidden="true"></div>
+
   <div id="toast" class="toast hidden"></div>
   <div id="seg-tip" class="seg-tip hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=6"></script>
+  <script src="known_events.js?v=3"></script>
 </body>
 </html>
