@@ -1,5 +1,6 @@
 # 🔥 Pillar of Fire · עמוד האש
 
+
 A first-responder dashboard that listens to incoming **Hebrew** emergency calls,
 transcribes them in real time, extracts structured incident details with an LLM,
 detects when multiple calls describe the **same event**, **clusters/merges**
@@ -8,7 +9,7 @@ related calls into one incident, and presents the combined picture to responders
 > **Decision-support only.** The system assists human responders — it does not
 > replace human judgement or official emergency protocols.
 
-Hackathon 2026 MVP.
+Hackathon 2026.
 
 ---
 
@@ -126,6 +127,7 @@ responders see **why** a merge was suggested — nothing is merged silently.
 | GET | `/api/demo-calls` | list available demo calls |
 | POST | `/api/reset` | clear all calls, incidents & suggestions |
 
+<<<<<<< HEAD
 ## Data model
 
 | Entity | Key fields |
@@ -137,3 +139,6 @@ responders see **why** a merge was suggested — nothing is merged silently.
 
 Merging is **never automatic** — a suggestion is raised when incident similarity
 clears `0.55`, and only a dispatcher's approval unifies them.
+=======
+
+>>>>>>> f38e85499ac5eec0ccd8424acd8cf14b4b6990e6
