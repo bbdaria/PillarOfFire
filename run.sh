@@ -10,6 +10,15 @@ export STT_ENGINE="${STT_ENGINE:-ivrit}"
 export IVRIT_MODEL="${IVRIT_MODEL:-ivrit-ai/whisper-large-v3-turbo-ct2}"
 # ----------------------------------------------------
 
+# --- Set default environment variables for the LLM analyzer ---
+export LLM_ENGINE="${LLM_ENGINE:-llama}"
+# OpenAI-compatible endpoint (Ollama by default). Falls back to the rule-based
+# mock analyzer automatically if this endpoint is unreachable.
+#   ollama pull "$LLAMA_MODEL"   # one-time, before first run
+export LLAMA_BASE_URL="${LLAMA_BASE_URL:-http://localhost:11434/v1}"
+export LLAMA_MODEL="${LLAMA_MODEL:-llama3.1}"
+# ----------------------------------------------------
+
 # Create venv + install deps on first run.
 if [ ! -d ".venv" ]; then
   echo "Creating virtualenv and installing dependencies..."

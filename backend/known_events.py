@@ -76,6 +76,51 @@ def geocode(raw_address: str, city: str = "") -> Optional[Tuple[float, float]]:
     return best_coords
 
 
+# Street-level geocoding via OpenStreetMap Nominatim (free, no key). Cached and
+# rate-respecting; falls back to the city gazetteer (and stays fully offline) if
+# the service is unreachable.
+_NOMINATIM_URL = os.environ.get("NOMINATIM_URL", "https://nominatim.openstreetmap.org/search")
+_GEO_CACHE: Dict[str, Optional[Tuple[float, float]]] = {}
+
+
+def geocode_precise(address: str) -> Optional[Tuple[float, float]]:
+    """Resolve a free-text Israeli address to (lat, lng) at street level.
+
+    Tries Nominatim first (street-accurate), then the city gazetteer. Results are
+    cached so each distinct address hits the network at most once.
+    """
+    address = (address or "").strip()
+    if not address:
+        return None
+    if address in _GEO_CACHE:
+        return _GEO_CACHE[address]
+
+    # Nominatim dislikes the Hebrew "רחוב" (street) prefix — drop it.
+    query = re.sub(r"\bרחוב\b", " ", address).strip(" ,")
+    coords: Optional[Tuple[float, float]] = None
+    try:
+        import requests
+        r = requests.get(
+            _NOMINATIM_URL,
+            params={"format": "json", "limit": 1, "countrycodes": "il",
+                    "accept-language": "he", "q": query},
+            headers={"User-Agent": "PillarOfFire/1.0 (emergency dispatch demo)"},
+            timeout=6,
+        )
+        r.raise_for_status()
+        data = r.json()
+        if data:
+            coords = (float(data[0]["lat"]), float(data[0]["lon"]))
+    except Exception:
+        coords = None
+
+    if coords is None:
+        coords = geocode(address)  # offline fallback: city center
+    if coords is not None:
+        _GEO_CACHE[address] = coords
+    return coords
+
+
 # --- creation / status -----------------------------------------------------
 
 def _parse_dt(value: str) -> Optional[datetime]:

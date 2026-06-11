@@ -103,6 +103,19 @@ function incidentCasualty(inc, field) {
   });
   return best;
 }
+// LLM-extracted facts aggregated across an incident's calls.
+function incidentFacts(inc) {
+  const a = (inc.call_ids || []).map(callById).filter(Boolean).map((c) => c.analysis || {});
+  const first = a.find((x) => x.date || x.time) || {};
+  return {
+    date: first.date || "", time: first.time || "",
+    callers: [...new Set(a.map((x) => x.caller).filter(Boolean))],
+    tags: [...new Set(a.flatMap((x) => x.tags || []))],
+    ambulance: a.some((x) => x.ambulance_needed),
+    injured: incidentCasualty(inc, "injured"),
+    dead: incidentCasualty(inc, "dead"),
+  };
+}
 
 function setRole(r) {
   if (!ROLES.includes(r)) return;
@@ -306,6 +319,16 @@ function renderDrawer() {
   // narrative summary with hover-to-source provenance
   const narrative = renderNarrative(inc);
 
+  // LLM key facts row
+  const f = incidentFacts(inc);
+  const factsHtml = `<div class="dr-facts">
+    ${f.date || f.time ? `<span class="fact">🕒 ${esc(f.date)} ${esc(f.time)}</span>` : ""}
+    ${f.callers.length ? `<span class="fact">📞 ${esc(f.callers.join(", "))}</span>` : ""}
+    <span class="fact ${f.ambulance ? "amb" : ""}">🚑 ${f.ambulance ? "נדרש אמבולנס" : "לא נדרש אמבולנס"}${f.injured != null ? ` · ${f.injured} פצועים` : ""}</span>
+    ${f.dead ? `<span class="fact crit">☠ ${f.dead} הרוגים</span>` : ""}
+    ${f.tags.length ? `<span class="fact">🏷 ${f.tags.map(esc).join(" · ")}</span>` : ""}
+  </div>`;
+
   // live transcripts, one block per linked call
   const transcripts = inc.call_ids.map((id) => {
     const c = callById(id); if (!c) return "";
@@ -322,8 +345,6 @@ function renderDrawer() {
     const c = callById(id) || {}; const disp = dispById(c.dispatcher_id);
     return `<span class="prov"><span class="dot" style="background:${c.color || "#888"}"></span>${esc(id)}${disp ? " · " + esc(disp.name) : ""}</span>`;
   }).join("");
-
-  const steps = (inc.recommended_next_steps || []).map((s) => `<li>${esc(s)}</li>`).join("");
 
   // match-score detail (why a merge was suggested / done)
   let matchDetail = "";
@@ -355,6 +376,7 @@ function renderDrawer() {
       ${window.renderContextAlertHTML ? window.renderContextAlertHTML(inc) : ""}
       <div class="section">
         <div class="section-title">תמונת מצב · רחפי על משפט לצפייה במקורות</div>
+        ${factsHtml}
         ${narrative}
       </div>
       <div class="section">
@@ -364,10 +386,6 @@ function renderDrawer() {
       <div class="section">
         <div class="section-title">שיחות מקושרות</div>
         <div class="linked">${linked}</div>
-      </div>
-      <div class="section">
-        <div class="section-title">צעדים מומלצים</div>
-        <ul class="steps">${steps || "<li class='muted'>—</li>"}</ul>
       </div>
       ${matchDetail}
       ${(role === "moked" || role === "meshager") ? renderActionFooter(inc) : ""}
@@ -577,9 +595,9 @@ function renderMeshagerCard(inc) {
   const loc = (inc.locations || []).find((l) => l.normalized || l.raw_text) || {};
   const inj = incidentCasualty(inc, "injured");
   const dead = incidentCasualty(inc, "dead");
+  const amb = incidentFacts(inc).ambulance;
   const fwdBy = inc.forwarded_by ? (dispById(inc.forwarded_by) || {}).name : null;
   const summary = (inc.narrative || []).map((s) => s.text).join(" ");
-  const steps = (inc.recommended_next_steps || []).slice(0, 3).map((s) => `<li>${esc(s)}</li>`).join("");
   const dispatched = (inc.dispatched || []).map((d) => `<span class="res-chip sm" title="${RES_HE[d.resource]}">${RES_ICON[d.resource] || ""}</span>`).join("");
   return `<div class="card m-card" data-inc="${inc.incident_id}" style="--sev:${sevVar(sev.label)}">
     <div class="card-top">
@@ -592,11 +610,11 @@ function renderMeshagerCard(inc) {
     <div class="m-summary" dir="rtl">${esc(summary) || "<span class='muted'>טרם חולץ תקציר…</span>"}</div>
     <div class="card-meta">
       <span class="chip wf-chip wf-${wf}">${WF_HE[wf]}</span>
-      <span class="chip">🚑 נפגעים: ${inj == null ? "—" : inj}${dead ? ` · ☠ ${dead}` : ""}</span>
+      ${amb ? `<span class="chip amb-chip">🚑 דרוש אמבולנס</span>` : ""}
+      <span class="chip">🩹 נפגעים: ${inj == null ? "—" : inj}${dead ? ` · ☠ ${dead}` : ""}</span>
       ${dispatched ? `<span class="chip">${dispatched}</span>` : ""}
       ${fwdBy ? `<span class="muted">מ: ${esc(fwdBy)}</span>` : ""}
     </div>
-    ${steps ? `<ul class="m-steps">${steps}</ul>` : ""}
   </div>`;
 }
 

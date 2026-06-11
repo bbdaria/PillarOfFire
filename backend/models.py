@@ -33,8 +33,11 @@ class CallAnalysis(BaseModel):
     """The structured extraction for a single call."""
     summary: str = ""
     event_type: str = "unknown"
+    tags: List[str] = Field(default_factory=list)  # "what happened", short tags
+    caller: str = ""                                # who is calling
     location: Location = Field(default_factory=Location)
     casualties: Casualties = Field(default_factory=Casualties)
+    ambulance_needed: bool = False
     hazards: List[str] = Field(default_factory=list)
     people_involved: Optional[int] = None
     urgency_indicators: List[str] = Field(default_factory=list)
@@ -43,6 +46,8 @@ class CallAnalysis(BaseModel):
     suggested_questions: List[str] = Field(default_factory=list)
     severity: Severity = Field(default_factory=Severity)
     recommended_next_steps: List[str] = Field(default_factory=list)
+    date: str = ""  # YYYY-MM-DD of the call (filled from call timestamp)
+    time: str = ""  # HH:MM of the call
 
 
 class Dispatcher(BaseModel):

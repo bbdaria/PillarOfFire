@@ -73,6 +73,13 @@ async def _warm_stt() -> None:
             log.info("STT engine ready")
         except Exception:
             log.exception("STT warmup failed — uploads will report an error")
+        # Probe the LLM analyzer too, so a missing Llama endpoint is obvious in
+        # the log instead of silently degrading to the mock analyzer.
+        try:
+            log.info("checking LLM analyzer (%s)…", type(analyzer).__name__)
+            await asyncio.to_thread(analyzer.warmup)
+        except Exception:
+            log.exception("LLM analyzer warmup failed")
     asyncio.create_task(warm())
 
 
@@ -99,6 +106,40 @@ def _ensure_incident(call: Call) -> Incident:
     return inc
 
 
+def _set_time_date(analysis, iso_ts: str) -> None:
+    """Stamp the call's date/time onto its analysis (from the call timestamp)."""
+    try:
+        dt = datetime.fromisoformat(iso_ts)
+    except Exception:
+        dt = datetime.now(timezone.utc)
+    analysis.date = dt.strftime("%Y-%m-%d")
+    analysis.time = dt.strftime("%H:%M")
+
+
+def _reanalyze_incident(inc: Incident) -> None:
+    """Set the incident's summary + severity from the LLM.
+
+    One call: reuse that call's analysis (no extra LLM call). Multiple calls
+    (i.e. after a merge): run the LLM ONCE on the combined transcript so the
+    summary and severity reflect every linked call.
+    """
+    calls = [c for c in (store.get_call(cid) for cid in inc.call_ids) if c]
+    if not calls:
+        return
+    if len(calls) == 1:
+        a = calls[0].analysis
+    else:
+        combined = "\n".join(f"שיחה {i + 1}: {c.transcript}" for i, c in enumerate(calls))
+        a = analyzer.analyze(combined)
+    inc.severity = a.severity
+    if a.summary:
+        # Keep coarse provenance: the whole summary points back to its calls.
+        sources = [{"call_id": c.call_id, "color": c.color,
+                    "dispatcher_id": c.dispatcher_id, "detail": (c.analysis.summary or "")[:80]}
+                   for c in calls]
+        inc.narrative = [{"text": a.summary, "sources": sources}]
+
+
 def _finalize_call_into_incident(call: Call) -> None:
     """Finish a call's incident and propose any merges.
 
@@ -107,6 +148,8 @@ def _finalize_call_into_incident(call: Call) -> None:
     """
     inc = _ensure_incident(call)
     matching.assemble_incident(inc)
+    _reanalyze_incident(inc)  # LLM-owned summary + severity (overrides rule-based)
+    store.upsert_incident(inc)
     matching.suggest_merges_for(inc)
 
 
@@ -138,19 +181,23 @@ async def _simulate_call(call_id: str, dispatcher_id: str,
             chunk = await asyncio.to_thread(next, chunks, _DONE)
             if chunk is _DONE:
                 break
+            # Stream the raw transcript live; we do NOT analyze per chunk — the
+            # LLM is called exactly once, on the full transcript, below.
             call.transcript = (call.transcript + " " + chunk).strip()
-            call.analysis = analyzer.analyze(call.transcript)  # progressive extraction
             store.upsert_call(call)
-            matching.assemble_incident(inc)  # keep the card in sync
-            store.upsert_incident(inc)
             if CHUNK_DELAY_SEC:
                 await asyncio.sleep(CHUNK_DELAY_SEC)
             else:
                 await asyncio.sleep(0)  # yield so polls render the new text
 
+        # Transcription finished -> ONE LLM call on the complete transcript.
+        call.status = "analyzing"
+        store.upsert_call(call)
+        call.analysis = await asyncio.to_thread(analyzer.analyze, call.transcript)
+        _set_time_date(call.analysis, call.timestamp)
         call.status = "analyzed"
         store.upsert_call(call)
-        _finalize_call_into_incident(call)
+        await asyncio.to_thread(_finalize_call_into_incident, call)
     except Exception as exc:  # surface STT/model failures instead of hanging
         log.exception("transcription failed for %s", call_id)
         call.status = "error"
@@ -329,6 +376,9 @@ async def merge(body: MergeBody):
             len(b.call_ids) == len(a.call_ids) and b.created_at < a.created_at):
         survivor, absorbed = (b, a)
     matching.merge_incidents(survivor, absorbed)
+    # Merge changed the call set -> refresh the LLM summary + severity once.
+    await asyncio.to_thread(_reanalyze_incident, survivor)
+    store.upsert_incident(survivor)
 
     # Any pending suggestion touching the absorbed incident is now resolved.
     for s in store.pending_suggestions():

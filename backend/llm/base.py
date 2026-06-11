@@ -15,3 +15,7 @@ class Analyzer(ABC):
     def analyze(self, transcript: str) -> CallAnalysis:
         """Convert a Hebrew transcript into structured incident details."""
         raise NotImplementedError
+
+    def warmup(self) -> None:
+        """Optional health check / preload, logged at startup. No-op by default."""
+        return None

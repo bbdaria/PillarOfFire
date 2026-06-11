@@ -158,9 +158,17 @@ class MockAnalyzer(Analyzer):
         severity = score_severity(event_type, hazards, casualties, distress, num_calls=1)
         next_steps = recommended_steps(event_type, hazards, casualties)
 
+        event_tag = {"explosion": "פיצוץ", "fire": "שריפה", "traffic_accident": "תאונת דרכים",
+                     "shooting": "ירי", "medical": "אירוע רפואי", "hazmat": 'חומ"ס'}
+        haz_tag = {"smoke": "עשן", "gas": "גז", "fire": "אש", "explosion": "פיצוץ", "vehicle": "רכב"}
+        tags = ([event_tag[event_type]] if event_type in event_tag else []) + [haz_tag.get(h, h) for h in hazards]
+        ambulance_needed = bool(injured) or event_type in ("medical", "traffic_accident", "explosion", "fire", "shooting")
+
         return CallAnalysis(
             summary=summary,
             event_type=event_type,
+            tags=tags,
+            ambulance_needed=ambulance_needed,
             location=location,
             casualties=casualties,
             hazards=hazards,

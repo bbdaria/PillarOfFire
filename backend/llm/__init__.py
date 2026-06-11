@@ -1,7 +1,9 @@
 """Analyzer selection.
 
-Default = rule-based mock (offline). Set LLM_ENGINE=claude (and ANTHROPIC_API_KEY)
-to use the real Claude analyzer; it falls back to mock if anything is missing.
+Default = rule-based mock (offline). Set LLM_ENGINE=llama to use a local/remote
+Llama via an OpenAI-compatible endpoint (e.g. Ollama), or LLM_ENGINE=claude for
+the Anthropic API. Both fall back to mock if their backend is unavailable, so the
+demo never breaks.
 """
 from __future__ import annotations
 
@@ -16,4 +18,7 @@ def get_analyzer() -> Analyzer:
     if engine == "claude":
         from llm.claude_analyzer import ClaudeAnalyzer
         return ClaudeAnalyzer()
+    if engine == "llama":
+        from llm.llama_analyzer import LlamaAnalyzer
+        return LlamaAnalyzer()
     return MockAnalyzer()
