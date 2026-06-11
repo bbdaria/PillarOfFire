@@ -3,5 +3,7 @@ uvicorn[standard]==0.34.0
 pydantic==2.10.4
 anthropic>=0.40.0          # LLM_ENGINE=claude
 requests>=2.31.0           # LLM_ENGINE=llama (OpenAI-compatible / Ollama endpoint)
-python-multipart==0.0.18
+python-multipart==0.0.18   # form parsing for uploads + Twilio webhooks
 faster-whisper>=1.0.0      # STT_ENGINE=ivrit  (ivrit-ai Hebrew models)
+twilio>=9.0.0              # Auto-Operator: only needed for outbound calls / Media Streams
+                           # (inbound webhooks return hand-built TwiML, no SDK required)

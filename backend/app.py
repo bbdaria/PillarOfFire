@@ -15,21 +15,28 @@ Endpoints
   GET  /api/state                full snapshot for polling
   POST /api/reset                clear all calls, incidents & suggestions
   POST /api/ingest               ingest a raw transcript chunk (real intake hook)
+  POST /voice/incoming           Twilio: open incident + start media stream + Q1
+  POST /voice/gather             Twilio: answered -> ivrit segment + next question
+  WS   /voice/stream             Twilio Media Streams: live caller audio -> ivrit
+  GET  /voice/audio/{clip}       serve pre-synthesized Hebrew prompt audio
 """
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
 import os
 from datetime import datetime, timezone
 import shutil
 from typing import Dict, Optional
 import tempfile
-from fastapi import UploadFile, File, Form
+from fastapi import (UploadFile, File, Form, Request, Response, BackgroundTasks,
+                     WebSocket, WebSocketDisconnect)
 
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -39,6 +46,7 @@ from stt import get_stt_engine
 from llm import get_analyzer
 import matching
 import known_events
+import voice
 from demo_known_events import seed_known_events
 
 app = FastAPI(title="Pillar of Fire")
@@ -80,6 +88,12 @@ async def _warm_stt() -> None:
             await asyncio.to_thread(analyzer.warmup)
         except Exception:
             log.exception("LLM analyzer warmup failed")
+        # Synthesize the Hebrew voice prompts (Twilio can't TTS Hebrew).
+        try:
+            await asyncio.to_thread(voice.ensure_audio)
+            log.info("voice prompts ready (%s)", voice.AUDIO_DIR)
+        except Exception:
+            log.exception("could not generate Hebrew voice prompts")
     asyncio.create_task(warm())
 
 
@@ -230,6 +244,180 @@ async def upload(dispatcher_id: Optional[str] = Form(None), file: UploadFile = F
     asyncio.create_task(_simulate_call(call_id, disp_id, script_key=tmp_path))
     
     return {"ok": True, "call_id": call_id, "filename": file.filename}
+
+
+# --- Auto-Operator: Twilio voice overflow intake (real-time ivrit STT) -----
+# Twilio routes overflow 100 calls to our number. We open the incident the moment
+# the call connects, hold a short Hebrew conversation (<Gather>, no key press),
+# and — via Twilio Media Streams — fork the caller's live audio to a WebSocket
+# where our ivrit STT transcribes it DURING the call, updating the dashboard live.
+
+_voice_seq = 0
+# call_sid -> {"ulaw": bytearray, "pos": int, "call_id": str}
+_streams: Dict[str, Dict] = {}
+
+
+def _open_voice_incident(caller_id: str) -> str:
+    """Open an empty live Call + incident at the start of the call so it appears
+    in the dashboard immediately and its transcript streams in. Returns call_id."""
+    global _voice_seq
+    _voice_seq += 1
+    call = Call(call_id=f"voice-{_voice_seq}", timestamp=_now(),
+                color=store.next_color(), status="transcribing",
+                dispatcher_id=DEFAULT_DISPATCHER, transcript="")
+    store.upsert_call(call)
+    _ensure_incident(call)  # card appears right away
+    return call.call_id
+
+
+def _transcribe_ulaw(ulaw: bytes) -> str:
+    """Transcribe raw 8 kHz μ-law telephony audio with our ivrit STT."""
+    if not ulaw:
+        return ""
+    try:
+        import audioop
+        import wave
+        pcm = audioop.ulaw2lin(ulaw, 2)  # -> 16-bit linear PCM, 8 kHz
+        path = os.path.join(tempfile.gettempdir(), f"stream-{len(ulaw)}.wav")
+        with wave.open(path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(8000)
+            w.writeframes(pcm)
+        return stt.transcribe(path).strip()
+    except Exception:
+        log.exception("μ-law transcription failed")
+        return ""
+
+
+def _transcribe_segment(call_sid: str) -> None:
+    """Transcribe the caller audio captured since the last answer and append it to
+    the live transcript (runs after each answered question)."""
+    s = _streams.get(call_sid)
+    if not s:
+        return
+    ulaw = bytes(s["ulaw"])
+    new, s["pos"] = ulaw[s["pos"]:], len(ulaw)
+    if len(new) < 4000:  # < ~0.5 s of audio — nothing meaningful
+        return
+    text = _transcribe_ulaw(new)
+    if not text:
+        return
+    call = store.get_call(s["call_id"])
+    if not call:
+        return
+    call.transcript = (call.transcript + " " + text).strip()
+    store.upsert_call(call)
+    inc = store.get_incident(call.incident_id)
+    if inc:
+        matching.assemble_incident(inc)
+        store.upsert_incident(inc)
+    log.info("live ivrit segment for %s -> %r", call_sid, text[:80])
+
+
+def _finalize_stream_call(call_sid: str) -> None:
+    """End of call: transcribe the final segment, then run the LLM + triage."""
+    _transcribe_segment(call_sid)
+    s = _streams.pop(call_sid, None)
+    if not s:
+        return
+    call = store.get_call(s["call_id"])
+    inc = store.get_incident(call.incident_id) if call else None
+    if not (call and inc):
+        return
+    try:
+        call.analysis = analyzer.analyze(call.transcript)
+        _set_time_date(call.analysis, call.timestamp)
+        call.status = "analyzed"
+        store.upsert_call(call)
+        matching.assemble_incident(inc)
+        _reanalyze_incident(inc)
+        if voice.triage(call.transcript)[0] == "CRITICAL":
+            inc.priority_override = Severity(
+                score=10, label="critical",
+                reasoning="מילות מפתח קריטיות זוהו בשיחה אוטומטית")
+        store.upsert_incident(inc)
+        matching.suggest_merges_for(inc)
+        log.info("voice call %s finalized: %r", call_sid, call.transcript[:100])
+    except Exception:
+        log.exception("voice finalize failed for %s", call_sid)
+        call.status = "error"
+        store.upsert_call(call)
+
+
+@app.get("/voice/audio/{clip}")
+async def voice_audio(clip: str):
+    """Serve the pre-synthesized Hebrew prompt clips that Twilio <Play>s."""
+    if not voice.is_clip(clip):
+        raise HTTPException(404, "unknown clip")
+    path = os.path.join(voice.AUDIO_DIR, clip)
+    if not os.path.exists(path):
+        raise HTTPException(404, "audio not generated")
+    return FileResponse(path, media_type="audio/wav")
+
+
+@app.post("/voice/incoming")
+async def voice_incoming(request: Request):
+    """Twilio hits this when a call arrives: open the live incident, start the
+    media stream (caller audio -> our ivrit STT), greet + ask Q1."""
+    form = await request.form()
+    caller_id = form.get("From", "")
+    call_sid = form.get("CallSid", "")
+    count, is_repeat = voice.record_call(caller_id)
+    voice.start_session(call_sid, caller_id)
+    call_id = _open_voice_incident(caller_id)
+    _streams[call_sid] = {"ulaw": bytearray(), "pos": 0, "call_id": call_id}
+    host = request.headers.get("host", "")
+    stream_url = f"wss://{host}/voice/stream"
+    log.info("voice incoming: From=%s sid=%s repeat=%s stream=%s",
+             caller_id, call_sid, is_repeat, stream_url)
+    return Response(content=voice.stream_then_question(stream_url, "/voice/gather"),
+                    media_type="application/xml")
+
+
+@app.websocket("/voice/stream")
+async def voice_stream(ws: WebSocket):
+    """Twilio Media Stream: receive the caller's live μ-law audio and buffer it
+    (per call). Transcription is triggered per-answer from /voice/gather."""
+    await ws.accept()
+    call_sid = None
+    try:
+        while True:
+            data = json.loads(await ws.receive_text())
+            event = data.get("event")
+            if event == "start":
+                call_sid = data["start"]["callSid"]
+                log.info("media stream started for call %s", call_sid)
+            elif event == "media" and call_sid:
+                s = _streams.get(call_sid)
+                if s is not None:
+                    s["ulaw"].extend(base64.b64decode(data["media"]["payload"]))
+            elif event == "stop":
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        log.exception("media stream error (call %s)", call_sid)
+    log.info("media stream closed for call %s", call_sid)
+
+
+@app.post("/voice/gather")
+async def voice_gather(request: Request, background_tasks: BackgroundTasks):
+    """One turn: transcribe the answer just given (live ivrit) and ask the next
+    question, or — when done — play the closing and finalize the analysis."""
+    form = await request.form()
+    call_sid = form.get("CallSid", "")
+    nxt = voice.record_answer_and_next(call_sid, form.get("SpeechResult", "") or "")
+    if nxt is not None:
+        # Transcribe this answer's audio segment in the background (updates live).
+        background_tasks.add_task(_transcribe_segment, call_sid)
+        return Response(content=voice.question_twiml(nxt, "/voice/gather"),
+                        media_type="application/xml")
+
+    # Last answer -> transcribe remaining audio + run the LLM, then close the call.
+    background_tasks.add_task(_finalize_stream_call, call_sid)
+    voice.end_session(call_sid)
+    return Response(content=voice.closing_twiml(), media_type="application/xml")
 
 
 # --- Escalation workflow (moked -> meshager -> resolved) -------------------
