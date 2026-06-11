@@ -531,3 +531,202 @@ body.light .ke-status-scheduled { background: #e2e9f1; color: #41576f; }
 body.light .ke-status-ended { background: #e6ebf2; color: var(--muted); }
 body.light .sev-badge.sev-critical { color: #fff; }
 body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
+
+/* ============================================================
+   Hierarchical roles (מוקדנית → משגר → חמ"ל)
+   ============================================================ */
+
+/* --- role switcher in the top bar --- */
+.role-switch {
+  display: inline-flex; gap: 2px; background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 10px; padding: 3px;
+  margin-inline: auto;
+}
+.role-switch .role-btn {
+  background: transparent; color: var(--muted); border: none;
+  padding: 7px 16px; border-radius: 7px; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+}
+.role-switch .role-btn:hover { color: var(--text); filter: none; }
+.role-switch .role-btn.active {
+  background: var(--accent); color: #1a1006;
+}
+
+/* views wrapper: each role view is a full section under <main class="views"> */
+.view[hidden] { display: none; }
+.meshager-view, .hamal-view {
+  padding: 18px 22px; max-width: 1500px; margin: 0 auto;
+}
+
+/* --- workflow status chips (shared) --- */
+.wf-chip {
+  border-radius: 999px; padding: 2px 10px; font-size: 11px; font-weight: 600;
+  border: 1px solid var(--border);
+}
+.wf-new { color: var(--muted); }
+.wf-forwarded { color: #6ea8fe; border-color: #2a3d57; background: rgba(110,168,254,.1); }
+.wf-in_progress { color: var(--high); border-color: #4a3a22; background: rgba(240,136,62,.1); }
+.wf-resolved { color: var(--low); border-color: #234a2c; background: rgba(63,185,80,.12); }
+
+/* --- resource chips --- */
+.res-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 9px; font-size: 12px; color: var(--text);
+}
+.res-chip.sm { padding: 1px 5px; font-size: 13px; }
+
+/* ============================================================
+   משגר queue + summary cards
+   ============================================================ */
+.meshager-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+}
+.m-card { cursor: pointer; }
+.m-summary {
+  margin-top: 10px; color: var(--text); font-size: 13px; line-height: 1.55;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.m-steps {
+  margin: 10px 0 0; padding-inline-start: 18px; color: var(--muted);
+  font-size: 12px; line-height: 1.6;
+}
+.m-steps li::marker { color: var(--accent); }
+
+/* ============================================================
+   Drawer action footer (forward / dispatch / status / priority)
+   ============================================================ */
+.dr-actions {
+  border-top: 1px solid var(--border); margin-top: 4px; padding-top: 14px;
+}
+.act-head { display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }
+.act-label {
+  color: var(--muted-2); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 6px;
+}
+.act-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.act-row.res-list { margin-top: 8px; }
+.act-btn {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.act-btn.primary { background: var(--accent); color: #1a1006; border: none; }
+.fwd-select {
+  flex: 1; min-width: 120px; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+}
+.res-btn, .wf-btn {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  padding: 8px 13px; border-radius: 8px; font-size: 13px; cursor: pointer;
+}
+.res-btn:hover, .wf-btn:hover { border-color: var(--accent); filter: none; }
+.wf-btn.active { background: var(--high); color: #1a1006; border-color: transparent; font-weight: 600; }
+.prio-row .prio-btn {
+  flex: 1; color: #fff; border: 2px solid transparent; opacity: .5;
+  padding: 7px 0; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.prio-btn.sev-low { background: var(--low); }
+.prio-btn.sev-medium { background: var(--medium); }
+.prio-btn.sev-high { background: var(--high); }
+.prio-btn.sev-critical { background: var(--critical); }
+.prio-btn.active { opacity: 1; border-color: var(--text); }
+
+/* ============================================================
+   חמ"ל dashboard
+   ============================================================ */
+.tiles {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px; margin-bottom: 18px;
+}
+.tile {
+  background: var(--panel); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); padding: 18px 16px; text-align: center;
+}
+.tile-val { font-size: 30px; font-weight: 700; line-height: 1; }
+.tile-lbl { color: var(--muted); font-size: 12px; margin-top: 8px; }
+.tile.warn .tile-val { color: var(--high); }
+.tile.ok .tile-val { color: var(--low); }
+.tile.crit .tile-val { color: var(--critical); }
+
+.hamal-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;
+}
+.panel {
+  background: var(--panel); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); padding: 16px 18px;
+}
+.panel h3 { font-size: 14px; margin: 0 0 14px; }
+.panel.wide { grid-column: 1 / -1; }
+.panel.wide #hamal-map { height: 360px; }
+#chart-timeline { width: 100%; max-height: 160px; }
+
+/* CSS bar charts (severity / type) */
+.barchart { display: flex; flex-direction: column; gap: 9px; }
+.bar-row { display: grid; grid-template-columns: 78px 1fr 28px; align-items: center; gap: 10px; }
+.bar-lbl { font-size: 12px; color: var(--muted); }
+.bar-track { background: var(--panel-3); border-radius: 999px; height: 12px; overflow: hidden; }
+.bar-track > i { display: block; height: 100%; border-radius: 999px; transition: width .3s ease; }
+.bar-val { font-size: 12px; font-weight: 600; text-align: center; }
+
+/* all-events table */
+.table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  text-align: right; color: var(--muted); font-weight: 600; font-size: 12px;
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+}
+.data-table td { padding: 9px 10px; border-bottom: 1px solid var(--border-soft); }
+.data-table tbody tr { cursor: pointer; }
+.data-table tbody tr:hover { background: var(--panel-2); }
+
+@media (max-width: 900px) {
+  .hamal-grid { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   Updated roles UI: resource toggle + table-first חמ"ל overview
+   ============================================================ */
+
+/* dispatched resource button (toggle on) */
+.res-btn.active {
+  background: rgba(63,185,80,.16); color: var(--low);
+  border-color: #2f7d43; font-weight: 600;
+}
+
+/* compact KPI strip */
+.tiles.strip { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tiles.strip .tile { padding: 12px 14px; }
+.tiles.strip .tile-val { font-size: 24px; }
+.tiles.strip .tile-lbl { margin-top: 5px; font-size: 11px; }
+
+/* operations layout: table centerpiece + side rail */
+.hamal-ops { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
+.ops-main { min-width: 0; }
+.ops-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.ops-bar .pane-hint { margin-inline-start: auto; }
+.ops-side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 18px; }
+.ops-side .panel { padding: 14px 16px; }
+.ops-side .panel h3 { margin-bottom: 10px; font-size: 13px; }
+.map.mini { height: 240px; }
+
+/* filter pills */
+.filters { display: inline-flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 3px; }
+.filter-btn {
+  background: transparent; color: var(--muted); border: none;
+  padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.filter-btn:hover { color: var(--text); filter: none; }
+.filter-btn.active { background: var(--accent); color: #1a1006; }
+
+/* sortable table */
+.ops-main .table-wrap { background: var(--panel); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 6px 14px 10px; }
+.data-table th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
+.data-table th[data-sort]:hover { color: var(--text); }
+.data-table th.sorted { color: var(--accent); }
+
+@media (max-width: 1000px) {
+  .hamal-ops { grid-template-columns: 1fr; }
+  .ops-side { position: static; flex-direction: row; flex-wrap: wrap; }
+  .ops-side .panel { flex: 1; min-width: 220px; }
+}

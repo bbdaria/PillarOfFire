@@ -46,10 +46,24 @@ class CallAnalysis(BaseModel):
 
 
 class Dispatcher(BaseModel):
-    """A call-center operator. Each has her own workspace of incidents."""
+    """A person in the command hierarchy.
+
+    role places them in the chain of escalation:
+      moked    — call-taker (מוקדנית): takes calls, forwards events upward.
+      meshager — dispatcher (משגר): acts on forwarded events (sends resources).
+      hamal    — command center (חמ"ל): full overview + dashboards.
+    """
     dispatcher_id: str
     name: str
     color: str = "#888888"  # identity tint (used sparingly, e.g. provenance)
+    role: str = "moked"  # moked | meshager | hamal
+
+
+class ResourceDispatch(BaseModel):
+    """A resource the משגר sent to an incident (logged with who + when)."""
+    resource: str  # ambulance | fire | police
+    at: str        # ISO datetime
+    by: Optional[str] = None  # meshager dispatcher_id
 
 
 class Call(BaseModel):
@@ -81,10 +95,19 @@ class Incident(BaseModel):
     title: str = ""
     event_type: str = "unknown"
     call_ids: List[str] = Field(default_factory=list)
-    dispatcher_ids: List[str] = Field(default_factory=list)  # owners (may be many after merge)
-    status: str = "open"  # open | merged
+    dispatcher_ids: List[str] = Field(default_factory=list)  # moked owners (may be many after merge)
+    status: str = "open"  # open | merged (merge lifecycle — independent of workflow_status)
     merged_into: Optional[str] = None  # if merged, the surviving incident id
     severity: Severity = Field(default_factory=Severity)
+    # --- escalation workflow (moked -> meshager -> resolved) ---
+    workflow_status: str = "new"  # new | forwarded | in_progress | resolved
+    assigned_meshager_id: Optional[str] = None  # the משגר handling it
+    forwarded_by: Optional[str] = None          # moked dispatcher_id who forwarded
+    forwarded_at: Optional[str] = None           # ISO datetime
+    dispatched: List[ResourceDispatch] = Field(default_factory=list)
+    # A manual priority set by moked/meshager; overrides computed `severity` for
+    # display and dashboards when present.
+    priority_override: Optional[Severity] = None
     # Merged evidence: field name -> list of {value, call_id, dispatcher_id} contributions.
     merged: Dict[str, list] = Field(default_factory=dict)
     # Narrative summary as ordered segments. Each segment is

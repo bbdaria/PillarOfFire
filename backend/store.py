@@ -20,12 +20,16 @@ PALETTE = [
     "#008080",  # teal
 ]
 
-# Seed dispatchers (the people working the call center). Each has a calm,
-# distinct identity tint used only for provenance, never as decoration.
+# Seed the command hierarchy. Each person has a calm, distinct identity tint
+# used only for provenance, never as decoration. Roles place them in the chain:
+# moked (call-takers) -> meshager (dispatchers who act) -> hamal (command center).
 SEED_DISPATCHERS = [
-    Dispatcher(dispatcher_id="d-daria", name="דריה", color="#5b8def"),
-    Dispatcher(dispatcher_id="d-noa", name="נועה", color="#26a69a"),
-    Dispatcher(dispatcher_id="d-amir", name="אמיר", color="#c97bd8"),
+    Dispatcher(dispatcher_id="d-daria", name="דריה", color="#5b8def", role="moked"),
+    Dispatcher(dispatcher_id="d-noa", name="נועה", color="#26a69a", role="moked"),
+    Dispatcher(dispatcher_id="d-amir", name="אמיר", color="#c97bd8", role="moked"),
+    Dispatcher(dispatcher_id="m-shahar", name="שחר", color="#e8833a", role="meshager"),
+    Dispatcher(dispatcher_id="m-yoav", name="יואב", color="#d4546a", role="meshager"),
+    Dispatcher(dispatcher_id="h-mefaked", name='מפקד חמ"ל', color="#8a7cd8", role="hamal"),
 ]
 
 

@@ -33,7 +33,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from models import Call, Incident
+from models import Call, Incident, ResourceDispatch, Severity
 from store import store
 from stt import get_stt_engine
 from llm import get_analyzer
@@ -183,6 +183,123 @@ async def upload(dispatcher_id: Optional[str] = Form(None), file: UploadFile = F
     asyncio.create_task(_simulate_call(call_id, disp_id, script_key=tmp_path))
     
     return {"ok": True, "call_id": call_id, "filename": file.filename}
+
+
+# --- Escalation workflow (moked -> meshager -> resolved) -------------------
+
+def _get_incident_or_404(incident_id: str) -> Incident:
+    inc = store.get_incident(incident_id)
+    if not inc:
+        raise HTTPException(404, "unknown incident")
+    return inc
+
+
+def _least_loaded_meshager() -> Optional[str]:
+    """Pick the משגר with the fewest active (non-resolved) assigned incidents.
+
+    This is the load-balancing target for forwarding: work goes to whoever is
+    least busy. Ties break toward seed order (min keeps the first minimum).
+    """
+    meshagers = [d for d in store.active_dispatchers() if d.role == "meshager"]
+    if not meshagers:
+        return None
+    load = {d.dispatcher_id: 0 for d in meshagers}
+    for inc in store.active_incidents():
+        mid = inc.assigned_meshager_id
+        if mid in load and inc.workflow_status != "resolved":
+            load[mid] += 1
+    return min(meshagers, key=lambda d: load[d.dispatcher_id]).dispatcher_id
+
+
+class ForwardBody(BaseModel):
+    by: Optional[str] = None  # the moked who forwarded
+
+
+@app.post("/api/incident/{incident_id}/forward")
+async def forward_incident(incident_id: str, body: ForwardBody):
+    """A מוקדנית forwards the event; it is auto-assigned to the least-busy משגר."""
+    inc = _get_incident_or_404(incident_id)
+    mid = _least_loaded_meshager()
+    if not mid:
+        raise HTTPException(400, "no meshager available")
+    inc.assigned_meshager_id = mid
+    inc.workflow_status = "forwarded"
+    inc.forwarded_by = body.by
+    inc.forwarded_at = _now()
+    store.upsert_incident(inc)
+    return {"ok": True, "assigned_meshager_id": mid}
+
+
+_WORKFLOW_STATES = {"forwarded", "in_progress", "resolved"}
+
+
+class StatusBody(BaseModel):
+    status: str
+
+
+@app.post("/api/incident/{incident_id}/status")
+async def set_incident_status(incident_id: str, body: StatusBody):
+    """The משגר advances the event through its handling lifecycle."""
+    if body.status not in _WORKFLOW_STATES:
+        raise HTTPException(400, f"status must be one of {sorted(_WORKFLOW_STATES)}")
+    inc = _get_incident_or_404(incident_id)
+    inc.workflow_status = body.status
+    store.upsert_incident(inc)
+    return {"ok": True}
+
+
+_RESOURCES = {"ambulance", "fire", "police"}
+
+
+class DispatchBody(BaseModel):
+    resource: str
+    by: Optional[str] = None  # the meshager dispatching
+
+
+@app.post("/api/incident/{incident_id}/dispatch")
+async def dispatch_resource(incident_id: str, body: DispatchBody):
+    """Toggle a resource (ambulance/fire/police) on the event.
+
+    Idempotent per resource type: if it's already sent, this removes it;
+    otherwise it sends one. Pressing the same button twice never stacks.
+    """
+    if body.resource not in _RESOURCES:
+        raise HTTPException(400, f"resource must be one of {sorted(_RESOURCES)}")
+    inc = _get_incident_or_404(incident_id)
+    already = any(d.resource == body.resource for d in inc.dispatched)
+    if already:
+        inc.dispatched = [d for d in inc.dispatched if d.resource != body.resource]
+    else:
+        inc.dispatched.append(ResourceDispatch(resource=body.resource, at=_now(), by=body.by))
+        # Sending a resource means the event is actively being handled.
+        if inc.workflow_status in ("new", "forwarded"):
+            inc.workflow_status = "in_progress"
+    store.upsert_incident(inc)
+    return {"ok": True, "active": not already}
+
+
+# Manual priority labels -> representative 1..10 score (matches Severity scale).
+_PRIORITY_SCORE = {"low": 2, "medium": 5, "high": 8, "critical": 10}
+
+
+class PriorityBody(BaseModel):
+    label: str
+    by: Optional[str] = None
+
+
+@app.post("/api/incident/{incident_id}/priority")
+async def override_priority(incident_id: str, body: PriorityBody):
+    """A מוקדנית or משגר manually overrides the event's priority."""
+    if body.label not in _PRIORITY_SCORE:
+        raise HTTPException(400, f"label must be one of {sorted(_PRIORITY_SCORE)}")
+    inc = _get_incident_or_404(incident_id)
+    inc.priority_override = Severity(
+        score=_PRIORITY_SCORE[body.label], label=body.label,
+        reasoning=f"עדיפות נקבעה ידנית{f' ע״י {body.by}' if body.by else ''}")
+    store.upsert_incident(inc)
+    return {"ok": True}
+
+
 class MergeBody(BaseModel):
     suggestion_id: Optional[str] = None
     incident_a: Optional[str] = None
