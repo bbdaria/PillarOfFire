@@ -15,9 +15,10 @@ Endpoints
   GET  /api/state                full snapshot for polling
   POST /api/reset                clear all calls, incidents & suggestions
   POST /api/ingest               ingest a raw transcript chunk (real intake hook)
-  POST /voice/incoming           Twilio: open incident + start media stream + Q1
+  POST /voice/incoming           Twilio: open incident + stream + full recording + Q1
   POST /voice/gather             Twilio: answered -> ivrit segment + next question
   WS   /voice/stream             Twilio Media Streams: live caller audio -> ivrit
+  POST /voice/recording_status   Twilio: full call recorded -> ivrit whole-call STT
   GET  /voice/audio/{clip}       serve pre-synthesized Hebrew prompt audio
 """
 from __future__ import annotations
@@ -40,7 +41,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from models import Call, Incident, ResourceDispatch, Severity
+from models import Call, Incident, ResourceDispatch, Severity, Location
 from store import store
 from stt import get_stt_engine
 from llm import get_analyzer
@@ -152,6 +153,33 @@ def _reanalyze_incident(inc: Incident) -> None:
                     "dispatcher_id": c.dispatcher_id, "detail": (c.analysis.summary or "")[:80]}
                    for c in calls]
         inc.narrative = [{"text": a.summary, "sources": sources}]
+    if len(calls) > 1:
+        _set_combined_location(inc, calls)
+
+
+def _set_combined_location(inc: Incident, calls) -> None:
+    """Several calls often give PARTIAL place names — a neighborhood in one, the
+    city in another (each alone fails to geocode well). Combine the distinct place
+    names (recognized cities last, so they anchor the query) and geocode the whole,
+    making it the incident's primary location."""
+    texts = []
+    for c in calls:
+        loc = c.analysis.location
+        t = (loc.normalized or loc.raw_text or "").strip()
+        if t and t not in texts:
+            texts.append(t)
+    if len(texts) < 2:
+        return
+    non_city = [t for t in texts if known_events.geocode(t) is None]
+    city = [t for t in texts if known_events.geocode(t) is not None]
+    query = ", ".join(non_city + city)
+    coords = known_events.geocode_precise(query)
+    if not coords:
+        return
+    loc = Location(raw_text=query, normalized=query, lat=coords[0], lng=coords[1], confidence=0.6)
+    inc.locations = [loc] + [l for l in inc.locations
+                             if l.lat is None or (round(l.lat, 4), round(l.lng, 4)) != (round(coords[0], 4), round(coords[1], 4))]
+    inc.title = f"{matching.HEB_EVENT.get(inc.event_type, inc.event_type)} - {query}"
 
 
 def _finalize_call_into_incident(call: Call) -> None:
@@ -255,9 +283,14 @@ async def upload(dispatcher_id: Optional[str] = Form(None), file: UploadFile = F
 # and — via Twilio Media Streams — fork the caller's live audio to a WebSocket
 # where our ivrit STT transcribes it DURING the call, updating the dashboard live.
 
+TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+
 _voice_seq = 0
 # call_sid -> {"ulaw": bytearray, "pos": int, "call_id": str}
 _streams: Dict[str, Dict] = {}
+# call_sid -> call_id, kept until the full-call recording is transcribed.
+_voice_call_id_by_sid: Dict[str, str] = {}
 
 
 def _open_voice_incident(caller_id: str) -> str:
@@ -348,6 +381,89 @@ def _finalize_stream_call(call_sid: str) -> None:
         store.upsert_call(call)
 
 
+def _start_full_recording(call_sid: str, public_base: str) -> None:
+    """Record the WHOLE call — BOTH legs (operator prompts + caller). The full
+    conversation is later transcribed by ivrit. Needs Twilio creds + a public URL."""
+    if not (TWILIO_SID and TWILIO_TOKEN and call_sid and public_base):
+        log.info("full-call recording skipped (missing creds/URL) for %s", call_sid)
+        return
+    try:
+        import requests
+        r = requests.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_SID}/Calls/{call_sid}/Recordings.json",
+            auth=(TWILIO_SID, TWILIO_TOKEN),
+            data={"RecordingTrack": "both",
+                  "RecordingStatusCallback": f"{public_base}/voice/recording_status",
+                  "RecordingStatusCallbackEvent": "completed"},
+            timeout=8,
+        )
+        if r.status_code >= 300:
+            log.warning("start full recording failed (%s): %s", r.status_code, r.text[:200])
+        else:
+            log.info("started full-call recording for %s", call_sid)
+    except Exception:
+        log.exception("could not start full-call recording for %s", call_sid)
+
+
+def _transcribe_recording(recording_url: str) -> str:
+    """Download a Twilio recording (mixed both legs) and transcribe it with ivrit."""
+    if not recording_url:
+        return ""
+    import requests
+    import time
+    auth = (TWILIO_SID, TWILIO_TOKEN) if (TWILIO_SID and TWILIO_TOKEN) else None
+    wav_url = recording_url + ".wav"
+    data, last = b"", None
+    try:
+        for _ in range(8):  # the recording may take a moment to finalize
+            last = requests.get(wav_url, auth=auth, timeout=10)
+            if last.status_code == 200 and last.content:
+                data = last.content
+                break
+            time.sleep(1)
+        if not data:
+            log.warning("recording fetch failed for %s (status %s)",
+                        wav_url, getattr(last, "status_code", "n/a"))
+            return ""
+        path = os.path.join(tempfile.gettempdir(), f"fullrec-{os.path.basename(recording_url)}.wav")
+        with open(path, "wb") as f:
+            f.write(data)
+        text = stt.transcribe(path).strip()
+        log.info("ivrit full-call transcript (%d bytes) -> %r", len(data), text[:100])
+        return text
+    except Exception:
+        log.exception("full-call transcription failed")
+        return ""
+
+
+def _apply_full_transcript(call_sid: str, recording_url: str) -> None:
+    """Full-call recording is ready: transcribe the ENTIRE call (operator + caller)
+    with ivrit and make it the incident's transcript + re-run the analysis."""
+    call_id = _voice_call_id_by_sid.pop(call_sid, None)
+    if not call_id:
+        return
+    text = _transcribe_recording(recording_url)
+    if not text:
+        return
+    call = store.get_call(call_id)
+    inc = store.get_incident(call.incident_id) if call else None
+    if not (call and inc):
+        return
+    try:
+        call.transcript = text
+        call.analysis = analyzer.analyze(text)
+        _set_time_date(call.analysis, call.timestamp)
+        call.status = "analyzed"
+        store.upsert_call(call)
+        matching.assemble_incident(inc)
+        _reanalyze_incident(inc)
+        store.upsert_incident(inc)
+        matching.suggest_merges_for(inc)  # re-check relatedness on the full transcript
+        log.info("incident for call %s set to full-call transcript", call_sid)
+    except Exception:
+        log.exception("full transcript apply failed for %s", call_sid)
+
+
 @app.get("/voice/audio/{clip}")
 async def voice_audio(clip: str):
     """Serve the pre-synthesized Hebrew prompt clips that Twilio <Play>s."""
@@ -360,9 +476,10 @@ async def voice_audio(clip: str):
 
 
 @app.post("/voice/incoming")
-async def voice_incoming(request: Request):
-    """Twilio hits this when a call arrives: open the live incident, start the
-    media stream (caller audio -> our ivrit STT), greet + ask Q1."""
+async def voice_incoming(request: Request, background_tasks: BackgroundTasks):
+    """Twilio hits this when a call arrives: open the live incident, start the live
+    media stream (caller audio -> ivrit, per-answer) AND a full-call recording (both
+    legs -> ivrit at the end), then greet + ask Q1."""
     form = await request.form()
     caller_id = form.get("From", "")
     call_sid = form.get("CallSid", "")
@@ -370,12 +487,27 @@ async def voice_incoming(request: Request):
     voice.start_session(call_sid, caller_id)
     call_id = _open_voice_incident(caller_id)
     _streams[call_sid] = {"ulaw": bytearray(), "pos": 0, "call_id": call_id}
+    _voice_call_id_by_sid[call_sid] = call_id
     host = request.headers.get("host", "")
     stream_url = f"wss://{host}/voice/stream"
     log.info("voice incoming: From=%s sid=%s repeat=%s stream=%s",
              caller_id, call_sid, is_repeat, stream_url)
+    # Record the entire call (both legs) for an authoritative ivrit transcript.
+    background_tasks.add_task(_start_full_recording, call_sid, f"https://{host}" if host else "")
     return Response(content=voice.stream_then_question(stream_url, "/voice/gather"),
                     media_type="application/xml")
+
+
+@app.post("/voice/recording_status")
+async def voice_recording_status(request: Request, background_tasks: BackgroundTasks):
+    """Twilio calls this when the full-call recording is ready -> ivrit transcribe
+    the entire conversation (operator + caller) and set it as the transcript."""
+    form = await request.form()
+    call_sid = form.get("CallSid", "")
+    recording_url = form.get("RecordingUrl", "")
+    log.info("full recording ready: sid=%s url=%s", call_sid, recording_url)
+    background_tasks.add_task(_apply_full_transcript, call_sid, recording_url)
+    return Response(status_code=204)
 
 
 @app.websocket("/voice/stream")

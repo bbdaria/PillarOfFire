@@ -81,23 +81,34 @@ def geocode(raw_address: str, city: str = "") -> Optional[Tuple[float, float]]:
 # the service is unreachable.
 _NOMINATIM_URL = os.environ.get("NOMINATIM_URL", "https://nominatim.openstreetmap.org/search")
 _GEO_CACHE: Dict[str, Optional[Tuple[float, float]]] = {}
+# Single-letter Hebrew prepositions/conjunctions that attach to the next word
+# (locative ב/ל/מ/כ + ו). Nominatim matches "טכניון" but not "בטכניון", so we
+# strip these so landmark names resolve.
+_HEB_PREFIX = ("ב", "ל", "מ", "כ", "ו")
 
 
-def geocode_precise(address: str) -> Optional[Tuple[float, float]]:
-    """Resolve a free-text Israeli address to (lat, lng) at street level.
+def _deprefix(word: str) -> str:
+    return word[1:] if len(word) > 2 and word[0] in _HEB_PREFIX else word
 
-    Tries Nominatim first (street-accurate), then the city gazetteer. Results are
-    cached so each distinct address hits the network at most once.
+
+def _query_variants(address: str) -> List[str]:
+    """Most-specific → most-general phrasings to try against Nominatim.
+
+    Nominatim struggles with verbose Hebrew ("הפקולטה למדעי המחשב בטכניון, חיפה")
+    but resolves the landmark + city ("טכניון חיפה"). So we strip prepositions and
+    progressively drop leading descriptive words, keeping the trailing landmark/city.
     """
-    address = (address or "").strip()
-    if not address:
-        return None
-    if address in _GEO_CACHE:
-        return _GEO_CACHE[address]
+    base = re.sub(r"\bרחוב\b", " ", address)
+    words = [_deprefix(w) for w in re.split(r"[\s,]+", base) if w]
+    variants: List[str] = []
+    for i in range(len(words)):
+        v = " ".join(words[i:]).strip()
+        if v and v not in variants:
+            variants.append(v)
+    return variants[:5]
 
-    # Nominatim dislikes the Hebrew "רחוב" (street) prefix — drop it.
-    query = re.sub(r"\bרחוב\b", " ", address).strip(" ,")
-    coords: Optional[Tuple[float, float]] = None
+
+def _nominatim(query: str) -> Optional[Tuple[float, float]]:
     try:
         import requests
         r = requests.get(
@@ -110,9 +121,32 @@ def geocode_precise(address: str) -> Optional[Tuple[float, float]]:
         r.raise_for_status()
         data = r.json()
         if data:
-            coords = (float(data[0]["lat"]), float(data[0]["lon"]))
+            return (float(data[0]["lat"]), float(data[0]["lon"]))
     except Exception:
-        coords = None
+        pass
+    return None
+
+
+def geocode_precise(address: str) -> Optional[Tuple[float, float]]:
+    """Resolve a free-text Israeli address to (lat, lng) at street level.
+
+    Tries Nominatim with progressively simpler phrasings (so landmarks like the
+    Technion resolve), then the offline city gazetteer. Cached per address.
+    """
+    address = (address or "").strip()
+    if not address:
+        return None
+    if address in _GEO_CACHE:
+        return _GEO_CACHE[address]
+
+    import time
+    coords: Optional[Tuple[float, float]] = None
+    for i, query in enumerate(_query_variants(address)):
+        if i:
+            time.sleep(1)  # respect Nominatim's ~1 req/s policy across retries
+        coords = _nominatim(query)
+        if coords:
+            break
 
     if coords is None:
         coords = geocode(address)  # offline fallback: city center
@@ -160,7 +194,9 @@ def create_known_event(payload: dict, source: str = "manual",
     city = payload.get("city", "")
     normalized = loc.get("normalized_address", "") or raw_address
     if (lat is None or lng is None):
-        hit = geocode(raw_address, city)
+        # Street-level geocode (Nominatim, falls back to the city gazetteer).
+        query = f"{raw_address}, {city}".strip(" ,") if city else raw_address
+        hit = geocode_precise(query)
         if hit:
             lat, lng = hit
             if city and city not in normalized:
@@ -324,7 +360,8 @@ def validate_row(row: dict) -> Tuple[Optional[dict], List[str]]:
     address = (row.get("address") or "").strip()
     city = (row.get("city") or "").strip()
     if lat is None or lng is None:
-        if not (address or city) or geocode(address, city) is None:
+        query = f"{address}, {city}".strip(" ,") if city else address
+        if not (address or city) or geocode_precise(query) is None:
             errors.append("מיקום לא ניתן לזיהוי — ספק lat/lng או כתובת/עיר מוכרת")
 
     for key in ("start_time", "end_time"):

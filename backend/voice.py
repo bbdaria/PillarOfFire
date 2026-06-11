@@ -19,8 +19,7 @@ from typing import Dict, List, Optional, Tuple
 from xml.sax.saxutils import quoteattr
 
 # --- Hebrew prompts --------------------------------------------------------
-GREETING = ("מוקד מנהלת מאה שלום. כל הנציגים תפוסים. "
-            "אשאל אותך כמה שאלות קצרות, אנא ענה אחרי כל שאלה.")
+GREETING = "משטרה שלום."
 CLOSING = "תודה רבה. המידע הועבר לכוחות ההצלה. הישאר במקום בטוח."
 
 # Few, broad questions — "what happened" also asks about casualties, so the caller
@@ -29,7 +28,9 @@ STEPS: List[Dict] = [
     {"key": "name", "clip": "q_name.wav", "text": "מה שמך?"},
     {"key": "location", "clip": "q_location.wav",
      "text": "מאיפה אתה מתקשר? אמור את הכתובת או המיקום המדויק."},
-    {"key": "what", "clip": "q_what.wav",
+    # "what happened" is open-ended — wait longer for silence so the caller can
+    # describe the event (with natural pauses) without being cut off.
+    {"key": "what", "clip": "q_what.wav", "speech_timeout": "6",
      "text": "מה קרה? תאר את האירוע, וציין אם יש נפגעים וכמה."},
 ]
 STEP_LABEL = {"name": "שם", "location": "מיקום", "what": "תיאור"}
@@ -162,14 +163,15 @@ def _play(clip: str) -> str:
     return f'<Play>/voice/audio/{clip}</Play>'
 
 
-def _gather(clips: List[str], action: str) -> str:
+def _gather(clips: List[str], action: str, speech_timeout: str = "auto") -> str:
     """Play the prompt clip(s) and listen for speech. speechTimeout=auto lets
-    Twilio detect when the caller has finished — no key press needed."""
+    Twilio detect when the caller finished; a number waits N s of silence (used
+    for open-ended answers so they aren't cut off mid-sentence)."""
     plays = "".join(_play(c) for c in clips)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<Response>'
-        f'<Gather input="speech" language="{SAY_LANG}" speechTimeout="auto" '
+        f'<Gather input="speech" language="{SAY_LANG}" speechTimeout="{speech_timeout}" '
         f'hints={quoteattr(SPEECH_HINTS)} method="POST" '
         f'action={quoteattr(action)} actionOnEmptyResult="true">'
         f'{plays}'
@@ -180,7 +182,7 @@ def _gather(clips: List[str], action: str) -> str:
 
 def question_twiml(step: Dict, action: str, intro: bool = False) -> str:
     clips = ([GREETING_CLIP] if intro else []) + [step["clip"]]
-    return _gather(clips, action)
+    return _gather(clips, action, step.get("speech_timeout", "auto"))
 
 
 def stream_then_question(stream_url: str, action: str) -> str:

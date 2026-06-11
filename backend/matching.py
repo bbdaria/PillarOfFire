@@ -31,16 +31,22 @@ WEIGHTS = {
 LINK_THRESHOLD = 0.55
 TIME_WINDOW_MIN = 30.0  # calls within this window are considered time-proximate
 
-# Hebrew stopwords to drop before computing transcript overlap.
+# Stopwords (Hebrew + English) dropped before computing transcript overlap.
 STOPWORDS = {
+    # Hebrew
     "אני", "יש", "של", "על", "זה", "הוא", "היא", "אבל", "כן", "לא", "מה",
     "אתם", "אותי", "הלו", "שלום", "בבקשה", "כל", "גם", "אז", "כי", "עם",
     "את", "הם", "אנחנו", "מאוד", "כבר", "פה", "שם", "או", "וגם",
+    # English
+    "the", "a", "an", "of", "at", "in", "on", "to", "is", "are", "was", "were",
+    "and", "or", "there", "they", "we", "you", "it", "this", "that", "with",
+    "for", "has", "have", "from", "by", "his", "her", "i",
 }
 
 
 def _tokens(text: str) -> set:
-    words = re.findall(r"[֐-׿]+", text or "")
+    # Hebrew (֐-׿) AND Latin words, so English/mixed transcripts also match.
+    words = re.findall(r"[a-z֐-׿]+", (text or "").lower())
     return {w for w in words if w not in STOPWORDS and len(w) > 1}
 
 
@@ -63,13 +69,14 @@ def _haversine_km(a: Location, b: Location) -> Optional[float]:
 
 
 def _location_sim(a: Location, b: Location) -> float:
+    # Best of geographic proximity and place-name overlap, so a strong text match
+    # (e.g. both "faculty of computer science") still counts even when one call has
+    # a full address and the other a partial one that geocoded elsewhere.
     km = _haversine_km(a, b)
-    if km is not None:
-        # 1.0 at same spot, ~0 beyond ~2km.
-        return max(0.0, 1.0 - km / 2.0)
-    # No coords: compare normalized text token overlap.
-    return _jaccard(_tokens(a.normalized or a.raw_text),
+    geo = max(0.0, 1.0 - km / 2.0) if km is not None else 0.0  # 1.0 same spot, ~0 >2km
+    text = _jaccard(_tokens(a.normalized or a.raw_text),
                     _tokens(b.normalized or b.raw_text))
+    return max(geo, text)
 
 
 def _time_sim(t1: str, t2: str) -> float:
@@ -89,10 +96,16 @@ def score_pair(new: Call, other: Call) -> MatchScore:
     evt = 1.0 if (na.event_type == oa.event_type and na.event_type != "unknown") else (
         0.4 if "unknown" in (na.event_type, oa.event_type) else 0.0)
     tim = _time_sim(new.timestamp, other.timestamp)
-    sem = _jaccard(_tokens(new.transcript), _tokens(other.transcript))
 
-    entities_new = set(na.hazards) | _tokens(na.location.normalized)
-    entities_other = set(oa.hazards) | _tokens(oa.location.normalized)
+    # Semantic: best of raw-transcript overlap and the LLM's extracted tags
+    # (tags are concise + normalized, so they match across phrasings/languages).
+    def _tagset(a):
+        return {t for tag in (a.tags or []) for t in _tokens(tag)}
+    sem = max(_jaccard(_tokens(new.transcript), _tokens(other.transcript)),
+              _jaccard(_tagset(na), _tagset(oa)))
+
+    entities_new = set(na.hazards) | _tagset(na) | _tokens(na.location.normalized)
+    entities_other = set(oa.hazards) | _tagset(oa) | _tokens(oa.location.normalized)
     ent = _jaccard(entities_new, entities_other)
 
     total = (WEIGHTS["location"] * loc + WEIGHTS["event_type"] * evt
