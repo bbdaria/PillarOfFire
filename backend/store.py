@@ -23,12 +23,10 @@ PALETTE = [
 # Seed the command hierarchy. Each person has a calm, distinct identity tint
 # used only for provenance, never as decoration. Roles place them in the chain:
 # moked (call-takers) -> meshager (dispatchers who act) -> hamal (command center).
+# Single-user demo: exactly one identity per role in the hierarchy.
 SEED_DISPATCHERS = [
     Dispatcher(dispatcher_id="d-daria", name="דריה", color="#5b8def", role="moked"),
-    Dispatcher(dispatcher_id="d-noa", name="נועה", color="#26a69a", role="moked"),
-    Dispatcher(dispatcher_id="d-amir", name="אמיר", color="#c97bd8", role="moked"),
     Dispatcher(dispatcher_id="m-shahar", name="שחר", color="#e8833a", role="meshager"),
-    Dispatcher(dispatcher_id="m-yoav", name="יואב", color="#d4546a", role="meshager"),
     Dispatcher(dispatcher_id="h-mefaked", name='מפקד חמ"ל', color="#8a7cd8", role="hamal"),
 ]
 
@@ -47,6 +45,7 @@ class Store:
         self._inc_seq = 0
         self._sug_seq = 0
         self._evt_seq = 0
+        self._call_num_seq = 0  # human-readable 4-digit call numbers (1001, 1002, …)
         self._seed_dispatchers()
 
     def _seed_dispatchers(self) -> None:
@@ -65,6 +64,13 @@ class Store:
             self._color_idx = 0
             self._inc_seq = 0
             self._sug_seq = 0
+            self._call_num_seq = 0
+
+    def next_call_number(self) -> str:
+        """A short, human-readable 4-digit call number (like a real 100 ticket)."""
+        with self._lock:
+            self._call_num_seq += 1
+            return f"{1000 + self._call_num_seq}"
 
     def next_color(self) -> str:
         with self._lock:

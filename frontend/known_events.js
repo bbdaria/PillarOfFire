@@ -77,6 +77,7 @@
   // still conveys the event area (radius_meters). Calm slate by default; the pin
   // and circle turn amber only when an active emergency relates to that event.
   let knownLayer = null;
+  let lastKnownSig = null; // skip redraw when nothing changed (prevents popup closing)
   function ensureLayer() {
     if (!knownLayer && typeof map !== "undefined" && map) {
       knownLayer = L.layerGroup().addTo(map);
@@ -93,9 +94,16 @@
     });
   }
 
-  window.renderKnownLayer = function () {
-    const layer = ensureLayer();
-    if (!layer) return;
+  function knownLayerSignature() {
+    const alerts = alertingEvents();
+    const evts = (state.known_events || []).map((e) =>
+      [e.id, e.status, e.type, e.name, (e.location || {}).lat, (e.location || {}).lng,
+       (e.location || {}).radius_meters, e.start_time, e.end_time, alerts[e.id] || ""]);
+    return JSON.stringify(evts);
+  }
+
+  function drawKnownOnLayer(layer, mapObj) {
+    if (!layer || !mapObj) return;
     layer.clearLayers();
     const alerts = alertingEvents();
     (state.known_events || []).forEach((e) => {
@@ -131,8 +139,27 @@
              style="margin-top:6px;cursor:pointer">פרטי האירוע</button>
          </div>`;
       L.marker([loc.lat, loc.lng], { icon: pinIcon(emoji, lvl), keEventId: e.id })
-        .bindPopup(popup).addTo(layer);
+        .bindPopup(popup, { autoPan: false, closeOnClick: false }).addTo(layer);
     });
+  }
+
+  window.renderKnownLayer = function () {
+    const layer = ensureLayer();
+    if (!layer) return;
+    // Only redraw when data actually changed — prevents destroying open popups
+    const sig = knownLayerSignature();
+    if (sig === lastKnownSig) return;
+    lastKnownSig = sig;
+    drawKnownOnLayer(layer, map);
+  };
+
+  // Expose for the meshager map to also show known events
+  window.renderKnownLayerOnMap = function (mapObj) {
+    if (!mapObj) return;
+    if (!mapObj._keLayer) {
+      mapObj._keLayer = L.layerGroup().addTo(mapObj);
+    }
+    drawKnownOnLayer(mapObj._keLayer, mapObj);
   };
 
   // ================================================= INCIDENT CONTEXT ALERT ===

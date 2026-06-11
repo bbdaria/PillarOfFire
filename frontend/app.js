@@ -38,10 +38,14 @@ const FIELD_LABEL = {
   summary: "תקציר", location: "מיקום", casualties: "נפגעים", hazards: "סכנות",
   urgency_indicators: "דחיפות", distress_level: "מצוקה", missing_information: "מידע חסר",
 };
-const WF_HE = { new: "חדש", forwarded: "הועבר למשגר", in_progress: "בטיפול", resolved: "טופל" };
+const WF_HE = { new: "חדש", forwarded: "הועבר למשגר", in_progress: "בטיפול", resolved: "טופל", escalated: 'הועבר לחמ"ל' };
 const RES_HE = { ambulance: "אמבולנס", fire: "כבאית", police: "משטרה" };
 const RES_ICON = { ambulance: "🚑", fire: "🚒", police: "🚓" };
 const PRIORITIES = ["low", "medium", "high", "critical"];
+// 4-level urgency scale shown to users (1/4 low … 4/4 critical), decoupled from
+// the analyzer's internal 1–10 score.
+const SEV_N = { low: 1, medium: 2, high: 3, critical: 4 };
+const sev4 = (sev) => SEV_N[sev && sev.label] || 1;
 
 // --- API + helpers ---
 async function api(path, method = "GET", body) {
@@ -67,7 +71,7 @@ function toast(msg) {
 
 function sevBadge(sev, small) {
   if (!sev) return "";
-  return `<span class="sev-badge sev-${sev.label} ${small ? "sm" : ""}">${esc(SEV_HE[sev.label] || sev.label)} · ${sev.score}/10</span>`;
+  return `<span class="sev-badge sev-${sev.label} ${small ? "sm" : ""}">${esc(SEV_HE[sev.label] || sev.label)} · ${sev4(sev)}/4</span>`;
 }
 function avatar(disp, cls = "av") {
   if (!disp) return "";
@@ -127,15 +131,7 @@ function setRole(r) {
   document.getElementById("scrim").classList.add("hidden");
   render();
 }
-function setMe(id) {
-  me = id; meByRole[role] = id;
-  const key = role === "moked" ? "me_moked" : role === "meshager" ? "me_meshager" : "me_hamal";
-  localStorage.setItem(key, id);
-  if (role === "moked") localStorage.setItem("dispatcher_id", id); // legacy write-through
-  lastDrawerSig = null; render();
-}
-
-// --- top bar: role switcher + contextual person picker ---
+// --- top bar: role switcher ---
 function renderTopbar() {
   // role switch active state + tagline
   document.querySelectorAll("#role-switch .role-btn").forEach((b) =>
@@ -146,45 +142,36 @@ function renderTopbar() {
   document.querySelectorAll(".moked-only").forEach((el) =>
     (el.style.display = role === "moked" ? "" : "none"));
   document.body.dataset.role = role;
-  renderDispatcherSelect();
+  ensureValidMe();
 }
 
-function renderDispatcherSelect() {
-  const sel = document.getElementById("dispatcher-select");
-  const who = document.querySelector(".who");
-  if (role === "hamal") { if (who) who.style.display = "none"; return; } // single admin
-  if (who) who.style.display = "";
+// Single-user demo: no person picker. Just keep `me` pointing at a valid
+// identity for the current role (the sole seeded user of that role).
+function ensureValidMe() {
   const users = usersByRole(role);
-  const key = role + ":" + users.length;
-  if (sel.dataset.k !== key) {
-    sel.innerHTML = users.map((d) =>
-      `<option value="${d.dispatcher_id}">${esc(d.name)}</option>`).join("");
-    sel.dataset.k = key;
-  }
   if (!users.find((d) => d.dispatcher_id === me)) { me = firstUserOfRole(role); meByRole[role] = me; }
-  sel.value = me;
-  const av = document.getElementById("who-avatar");
-  const d = dispById(me);
-  if (d) { av.textContent = initials(d.name); av.style.background = d.color; }
 }
+// Upload one or more recordings at once. Each file becomes its own call/incident,
+// uploaded in parallel so a batch of recordings streams in together.
 document.getElementById("file-input").onchange = async (e) => {
-  const f = e.target.files[0];
-  if (!f) return;
-  toast(`מעבד הקלטה: ${f.name}`);
+  const files = [...e.target.files];
+  if (!files.length) return;
+  toast(files.length === 1
+    ? `מעבד הקלטה: ${files[0].name}`
+    : `מעבד ${files.length} הקלטות…`);
 
-  const formData = new FormData();
-  formData.append("file", f);
-  formData.append("dispatcher_id", meByRole.moked || me);
-
-  await fetch("/api/upload", {
-    method: "POST",
-    body: formData
-  });
+  await Promise.all(files.map((f) => {
+    const formData = new FormData();
+    formData.append("file", f);
+    formData.append("dispatcher_id", meByRole.moked || me);
+    return fetch("/api/upload", { method: "POST", body: formData }).catch((err) =>
+      console.error("upload failed for", f.name, err));
+  }));
 
   e.target.value = "";
 };
 
-// --- incident cards ---
+// --- incident cards (KANBAN layout by severity) ---
 function renderIncidents() {
   const wrap = document.getElementById("incidents");
   const mine = myIncidents();
@@ -193,33 +180,56 @@ function renderIncidents() {
     wrap.innerHTML = `<div class="empty">אין אירועים פעילים במרחב שלך.<br>העלי הקלטה כדי להתחיל.</div>`;
     return;
   }
-  wrap.innerHTML = mine.map((inc) => {
+  // Group by severity into 4 columns
+  const buckets = { critical: [], high: [], medium: [], low: [] };
+  mine.forEach((inc) => {
     const sev = effSev(inc) || {};
-    const live = incidentIsLive(inc);
-    const sugg = suggestionsFor(inc.incident_id);
-    const owners = (inc.dispatcher_ids || []).map((id) => avatar(dispById(id))).join("");
-    const nCalls = inc.call_ids.length;
-    const wf = inc.workflow_status || "new";
-    return `<div class="card ${sugg.length ? "has-suggestion" : ""}" data-inc="${inc.incident_id}" style="--sev:${sevVar(sev.label)}">
-      <div class="card-top">
-        <div>
-          <div class="card-title">${esc(inc.title || EVENT_HE[inc.event_type] || inc.incident_id)}</div>
-          <div class="card-sub">${esc(EVENT_HE[inc.event_type] || inc.event_type)}</div>
-        </div>
-        ${sevBadge(sev, true)}
+    const label = sev.label || "low";
+    if (buckets[label]) buckets[label].push(inc);
+    else buckets.low.push(inc);
+  });
+
+  const colOrder = ["critical", "high", "medium", "low"];
+  wrap.innerHTML = `<div class="kanban">${colOrder.map((level) => {
+    const items = buckets[level];
+    return `<div class="kanban-col">
+      <div class="kanban-header" style="--sev:var(--${level})">
+        <span class="kanban-dot" style="background:var(--${level})"></span>
+        ${esc(SEV_HE[level])} <span class="count">${items.length}</span>
       </div>
-      <div class="card-meta">
-        ${live ? `<span class="chip live"><span class="dot pulse" style="background:var(--link)"></span>מתמלל…</span>` : ""}
-        <span class="chip">🔗 ${nCalls} ${nCalls === 1 ? "שיחה" : "שיחות"}</span>
-        ${sugg.length ? `<span class="chip suggestion">⚠ הצעת איחוד</span>` : ""}
-        ${wf !== "new" ? `<span class="chip wf-chip wf-${wf}">${WF_HE[wf]}</span>` : ""}
-        ${(inc.event_context && inc.event_context.length) ? `<span class="chip known-near">📍 אירוע ידוע בקרבת מקום</span>` : ""}
-        <span class="owners">${owners}</span>
+      <div class="kanban-cards">
+        ${items.length ? items.map((inc) => renderIncidentCard(inc)).join("") : `<div class="kanban-empty">—</div>`}
       </div>
     </div>`;
-  }).join("");
+  }).join("")}</div>`;
   wrap.querySelectorAll(".card").forEach((el) =>
     (el.onclick = () => openDrawer(el.dataset.inc)));
+}
+
+function renderIncidentCard(inc) {
+  const sev = effSev(inc) || {};
+  const live = incidentIsLive(inc);
+  const sugg = suggestionsFor(inc.incident_id);
+  const owners = (inc.dispatcher_ids || []).map((id) => avatar(dispById(id))).join("");
+  const nCalls = inc.call_ids.length;
+  const wf = inc.workflow_status || "new";
+  return `<div class="card ${sugg.length ? "has-suggestion" : ""}" data-inc="${inc.incident_id}" style="--sev:${sevVar(sev.label)}">
+    <div class="card-top">
+      <div>
+        <div class="card-title">${esc(inc.title || EVENT_HE[inc.event_type] || inc.incident_id)}</div>
+        <div class="card-sub">${esc(EVENT_HE[inc.event_type] || inc.event_type)}</div>
+      </div>
+      ${sevBadge(sev, true)}
+    </div>
+    <div class="card-meta">
+      ${live ? `<span class="chip live"><span class="dot pulse" style="background:var(--link)"></span>מתמלל…</span>` : ""}
+      <span class="chip">🔗 ${inc.call_ids.map(id => "#" + esc(callById(id)?.call_number || id)).join(", ")}</span>
+      ${sugg.length ? `<span class="chip suggestion">⚠ הצעת איחוד</span>` : ""}
+      ${wf !== "new" ? `<span class="chip wf-chip wf-${wf}">${WF_HE[wf]}</span>` : ""}
+      ${(inc.event_context && inc.event_context.length) ? `<span class="chip known-near">📍 אירוע ידוע בקרבת מקום</span>` : ""}
+      <span class="owners">${owners}</span>
+    </div>
+  </div>`;
 }
 
 // --- drawer (incident detail) ---
@@ -237,7 +247,8 @@ function drawerSignature(inc) {
   inc.narrative, inc.dispatcher_ids, inc.recommended_next_steps, calls, sug,
   inc.event_context, role,
   inc.workflow_status, inc.assigned_meshager_id, inc.dispatched,
-  inc.priority_override, inc.forwarded_by]);
+  inc.priority_override, inc.forwarded_by, inc.escalated_to_c2,
+  inc.review_flag, state.incidents.length]);
 }
 document.getElementById("scrim").onclick = closeDrawer;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
@@ -332,18 +343,17 @@ function renderDrawer() {
   // live transcripts, one block per linked call
   const transcripts = inc.call_ids.map((id) => {
     const c = callById(id); if (!c) return "";
-    const disp = dispById(c.dispatcher_id);
     const liveTag = c.status === "transcribing" ? `<span class="dot pulse" style="background:var(--link)"></span>מתמלל`
       : c.status === "error" ? `<span style="color:#e35d6a">⚠ שגיאת תמלול</span>` : "נותח";
     return `<div class="tr-block">
-      <div class="tr-head"><span class="dot" style="background:${c.color}"></span>${esc(c.call_id)}${disp ? " · " + esc(disp.name) : ""} <span class="muted" style="margin-inline-start:auto">${liveTag}</span></div>
+      <div class="tr-head"><span class="dot" style="background:${c.color}"></span>שיחה ${esc(c.call_number || c.call_id)} <span class="muted" style="margin-inline-start:auto">${liveTag}</span></div>
       <div class="tr-text" dir="rtl">${esc(c.transcript) || "…"}</div>
     </div>`;
   }).join("");
 
   const linked = inc.call_ids.map((id) => {
-    const c = callById(id) || {}; const disp = dispById(c.dispatcher_id);
-    return `<span class="prov"><span class="dot" style="background:${c.color || "#888"}"></span>${esc(id)}${disp ? " · " + esc(disp.name) : ""}</span>`;
+    const c = callById(id) || {};
+    return `<span class="prov"><span class="dot" style="background:${c.color || "#888"}"></span>שיחה ${esc(c.call_number || id)}</span>`;
   }).join("");
 
   // match-score detail (why a merge was suggested / done)
@@ -402,38 +412,63 @@ function renderDrawer() {
 // --- role action footer in the drawer (forward / dispatch / status / priority) ---
 function renderActionFooter(inc) {
   const wf = inc.workflow_status || "new";
-  const assigned = inc.assigned_meshager_id ? (dispById(inc.assigned_meshager_id) || {}).name : null;
-  const fwdBy = inc.forwarded_by ? (dispById(inc.forwarded_by) || {}).name : null;
   const statusChip = `<span class="wf-chip wf-${wf}">${WF_HE[wf] || wf}</span>`;
   const dispatched = (inc.dispatched || []).map((d) =>
-    `<span class="res-chip">${RES_ICON[d.resource] || ""} ${RES_HE[d.resource] || d.resource}</span>`).join("");
+    `<span class="res-chip">${RES_HE[d.resource] || d.resource} ✓</span>`).join("");
   const prio = effSev(inc) || {};
   const prioBtns = PRIORITIES.map((p) =>
     `<button class="prio-btn sev-${p} ${prio.label === p ? "active" : ""}" data-prio="${p}">${SEV_HE[p]}</button>`).join("");
 
   let roleActions = "";
   if (role === "moked") {
-    roleActions = `
-      <div class="act-label">העברה למשגר</div>
-      <div class="act-row">
-        <button class="act-btn primary" id="fwd-btn">${inc.assigned_meshager_id ? "העבר מחדש (איזון עומסים) ▸" : "העבר למשגר הפנוי ביותר ▸"}</button>
-      </div>`;
+    // Forward (only if not already forwarded — "העבר מחדש" removed).
+    const fwd = inc.assigned_meshager_id ? "" : `
+        <div class="act-label">העברה למשגר</div>
+        <div class="act-row">
+          <button class="act-btn primary" id="fwd-btn">העבר למשגר הפנוי ביותר ▸</button>
+        </div>`;
+    // Manual link: combine this incident with another so the LLM merges their info.
+    const others = state.incidents.filter((i) =>
+      i.status === "open" && i.incident_id !== inc.incident_id);
+    const linkOpts = others.length
+      ? others.map((o) => `<button class="link-opt" data-link="${o.incident_id}">
+          <span class="dot" style="background:${sevVar((effSev(o) || {}).label)}"></span>
+          <span class="link-opt-title">${esc(o.title || o.incident_id)}</span>
+          <span class="muted">${o.call_ids.length} שיחות</span>
+        </button>`).join("")
+      : `<div class="muted" style="padding:8px 4px">אין אירועים אחרים לקישור כרגע</div>`;
+    roleActions = `${fwd}
+      <div class="act-label">קישור לאירוע אחר</div>
+      <div class="act-row"><button class="act-btn" id="link-btn">🔗 קשר לאירוע אחר</button></div>
+      <div id="link-list" class="link-list hidden">${linkOpts}</div>`;
   } else if (role === "meshager") {
     const active = new Set((inc.dispatched || []).map((d) => d.resource));
+    // Resource buttons WITHOUT emojis, with green checkmark when active
     const resBtns = Object.keys(RES_HE).map((r) =>
-      `<button class="res-btn ${active.has(r) ? "active" : ""}" data-res="${r}">${RES_ICON[r]} ${RES_HE[r]}${active.has(r) ? " ✓" : ""}</button>`).join("");
+      `<button class="res-btn ${active.has(r) ? "active" : ""}" data-res="${r}">${RES_HE[r]}${active.has(r) ? " ✓" : ""}</button>`).join("");
+    // C2 escalation button
+    const isEscalated = inc.escalated_to_c2;
+    const c2Btn = `<button class="res-btn ${isEscalated ? "active" : ""}" id="c2-btn">${isEscalated ? 'חמ"ל ✓' : 'העבר לחמ"ל'}</button>`;
     const steps = ["in_progress", "resolved"].map((s) =>
       `<button class="wf-btn ${wf === s ? "active" : ""}" data-wf="${s}">${WF_HE[s]}</button>`).join("");
     roleActions = `
-      <div class="act-label">שליחת כוחות (לחיצה נוספת מבטלת)</div>
-      <div class="act-row">${resBtns}</div>
+      <div class="act-label">שליחת כוחות / העברה (לחיצה נוספת מבטלת)</div>
+      <div class="act-row">${resBtns}${c2Btn}</div>
       <div class="act-label">סטטוס טיפול</div>
       <div class="act-row">${steps}</div>`;
   }
 
+  // Post-merge review banner (shown to the משגר who already holds the event).
+  const reviewBanner = (role === "meshager" && inc.review_flag) ? `
+      <div class="review-banner">
+        <span>⚠ ${esc(inc.review_reason || "האירוע אוחד — נא לבדוק מחדש")}</span>
+        <button class="act-btn" id="ack-review-btn">סמן כנבדק</button>
+      </div>` : "";
+
   return `
     <div class="section dr-actions">
-      <div class="act-head">${statusChip}${assigned ? ` <span class="muted">משגר: ${esc(assigned)}</span>` : ""}${fwdBy ? ` <span class="muted">· הועבר ע"י ${esc(fwdBy)}</span>` : ""}</div>
+      ${reviewBanner}
+      <div class="act-head">${statusChip}</div>
       ${dispatched ? `<div class="act-row res-list">${dispatched}</div>` : ""}
       <div class="act-label">עדיפות</div>
       <div class="act-row prio-row">${prioBtns}</div>
@@ -450,6 +485,30 @@ function bindActionFooter(drawer, inc) {
     (b.onclick = () => doDispatch(inc.incident_id, b.dataset.res)));
   drawer.querySelectorAll("[data-wf]").forEach((b) =>
     (b.onclick = () => doStatus(inc.incident_id, b.dataset.wf)));
+  const c2Btn = drawer.querySelector("#c2-btn");
+  if (c2Btn) c2Btn.onclick = () => doEscalate(inc.incident_id);
+  // Manual incident linking (moked)
+  const linkBtn = drawer.querySelector("#link-btn");
+  const linkList = drawer.querySelector("#link-list");
+  if (linkBtn && linkList) linkBtn.onclick = () => linkList.classList.toggle("hidden");
+  drawer.querySelectorAll("[data-link]").forEach((b) =>
+    (b.onclick = () => doManualLink(inc.incident_id, b.dataset.link)));
+  // Acknowledge post-merge review (meshager)
+  const ackBtn = drawer.querySelector("#ack-review-btn");
+  if (ackBtn) ackBtn.onclick = () => doAckReview(inc.incident_id);
+}
+
+async function doManualLink(aId, bId) {
+  const res = await api("/api/merge", "POST", { incident_a: aId, incident_b: bId });
+  if (res && res.incident_id) {
+    openIncidentId = res.incident_id; lastDrawerSig = null;
+    toast("האירועים קושרו ואוחדו — תמונת המצב חודשה");
+  } else { toast("הקישור נכשל"); }
+  await poll();
+}
+async function doAckReview(id) {
+  await api(`/api/incident/${id}/ack_review`, "POST");
+  toast("האירוע סומן כנבדק"); await poll();
 }
 
 async function doForward(id) {
@@ -472,6 +531,10 @@ async function doPriority(id, label) {
   await api(`/api/incident/${id}/priority`, "POST", { label, by: me });
   toast(`עדיפות עודכנה: ${SEV_HE[label] || label}`); await poll();
 }
+async function doEscalate(id) {
+  await api(`/api/incident/${id}/escalate`, "POST");
+  toast('האירוע הועבר לחמ"ל'); await poll();
+}
 
 async function doMerge(suggestionId) {
   const res = await api("/api/merge", "POST", { suggestion_id: suggestionId });
@@ -483,12 +546,20 @@ async function doReject(suggestionId) {
   toast("ההצעה נדחתה"); await poll();
 }
 
-// --- maps (moked shared map + hamal all-events map) ---
-let map, markerLayer, hamalMap, hamalLayer;
+// --- maps (moked shared map + meshager map + hamal all-events map) ---
+let map, markerLayer, meshagerMap, meshagerLayer, hamalMap, hamalLayer;
 function initMap() {
   map = L.map("map", { zoomControl: true, attributionControl: false }).setView([32.08, 34.8], 9);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(map);
   markerLayer = L.layerGroup().addTo(map);
+}
+function initMeshagerMap() {
+  if (meshagerMap) return;
+  const el = document.getElementById("meshager-map");
+  if (!el) return;
+  meshagerMap = L.map("meshager-map", { zoomControl: true, attributionControl: false }).setView([32.08, 34.8], 9);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(meshagerMap);
+  meshagerLayer = L.layerGroup().addTo(meshagerMap);
 }
 function initHamalMap() {
   if (hamalMap) return;
@@ -498,11 +569,13 @@ function initHamalMap() {
 }
 // Draw incident markers onto a given map/layer. opts.highlightMine outlines the
 // acting user's incidents; opts.openAny lets any marker open its drawer.
+// opts.filterFn can restrict which incidents are drawn.
 function drawMarkers(mapObj, layer, opts) {
   if (!mapObj) return;
   layer.clearLayers();
   const pts = [];
-  state.incidents.forEach((inc) => {
+  const incs = opts.filterFn ? state.incidents.filter(opts.filterFn) : state.incidents;
+  incs.forEach((inc) => {
     const loc = (inc.locations || []).find((l) => l.lat != null);
     if (!loc) return;
     const sev = effSev(inc) || {};
@@ -511,10 +584,12 @@ function drawMarkers(mapObj, layer, opts) {
     const mine = (inc.dispatcher_ids || []).includes(me);
     const highlight = opts.highlightMine && mine;
     const owners = (inc.dispatcher_ids || []).map((id) => (dispById(id) || {}).name).filter(Boolean).join(", ");
+    // C2 (חמ"ל) doesn't show the handling operator — it's an overview, not a workspace.
+    const ownerLine = (role === "hamal" || !owners) ? "" : `<br>מטופל ע"י: ${esc(owners)}`;
     const mk = L.circleMarker([loc.lat, loc.lng], {
       radius, color: highlight ? "#fff" : color, weight: highlight ? 2 : 1.5,
       fillColor: color, fillOpacity: 0.55,
-    }).bindPopup(`<b>${esc(inc.title)}</b><br>חומרה: ${SEV_HE[sev.label] || ""} ${sev.score || ""}/10<br>שיחות מאוחדות: ${inc.call_ids.length}<br>מטופל ע"י: ${esc(owners)}`);
+    }).bindPopup(`<b>${esc(inc.title)}</b><br>חומרה: ${SEV_HE[sev.label] || ""} ${sev4(sev)}/4<br>שיחות מאוחדות: ${inc.call_ids.length}${ownerLine}`);
     mk.on("click", () => { if (opts.openAny || mine) openDrawer(inc.incident_id); });
     mk.addTo(layer);
     pts.push([loc.lat, loc.lng]);
@@ -546,19 +621,22 @@ document.getElementById("btn-reset").onclick = async () => {
   await api("/api/reset", "POST"); openIncidentId = null;
   for (const k in knownCalls) delete knownCalls[k];
   if (map) map._fitOnce = false;
+  if (meshagerMap) meshagerMap._fitOnce = false;
   if (hamalMap) hamalMap._fitOnce = false;
   lastHamalSig = null;
 };
 document.getElementById("btn-upload").onclick = () => document.getElementById("file-input").click();
 
-// role switcher + person picker
+// role switcher (single-user demo — no person picker)
 document.querySelectorAll("#role-switch .role-btn").forEach((b) =>
   (b.onclick = () => setRole(b.dataset.role)));
-document.getElementById("dispatcher-select").onchange = (e) => setMe(e.target.value);
 
 // hamal table filters
 document.querySelectorAll("#hamal-filters .filter-btn").forEach((b) =>
   (b.onclick = () => setHamalFilter(b.dataset.filter)));
+// hamal severity dropdown
+const hamalSevSel = document.getElementById("hamal-sev-filter");
+if (hamalSevSel) hamalSevSel.onchange = () => { hamalSevFilter = hamalSevSel.value; lastHamalSig = null; render(); };
 
 // --- per-role views ---------------------------------------------------------
 function applyRoleVisibility() {
@@ -580,13 +658,24 @@ function renderMeshager() {
   document.getElementById("meshager-count").textContent = mine.length;
   if (!mine.length) {
     wrap.innerHTML = `<div class="empty">אין אירועים שהועברו אליך כרגע.<br>אירועים שמוקדנית תעביר אליך יופיעו כאן.</div>`;
-    return;
+  } else {
+    // Sort by severity descending (ordered list)
+    mine.sort((a, b) => ((effSev(b)?.score || 0) - (effSev(a)?.score || 0)));
+    wrap.innerHTML = mine.map(renderMeshagerCard).join("");
+    wrap.querySelectorAll(".m-card").forEach((el) => (el.onclick = () => openDrawer(el.dataset.inc)));
   }
-  const order = { in_progress: 0, forwarded: 1, new: 2, resolved: 3 };
-  mine.sort((a, b) => (order[a.workflow_status] ?? 9) - (order[b.workflow_status] ?? 9)
-    || ((effSev(b)?.score || 0) - (effSev(a)?.score || 0)));
-  wrap.innerHTML = mine.map(renderMeshagerCard).join("");
-  wrap.querySelectorAll(".m-card").forEach((el) => (el.onclick = () => openDrawer(el.dataset.inc)));
+
+  // Initialize and render meshager map
+  initMeshagerMap();
+  if (meshagerMap) {
+    requestAnimationFrame(() => meshagerMap.invalidateSize());
+    drawMarkers(meshagerMap, meshagerLayer, {
+      highlightMine: false, openAny: true,
+      filterFn: (inc) => inc.assigned_meshager_id === me
+    });
+    // Also render known events layer on meshager map
+    if (window.renderKnownLayerOnMap) window.renderKnownLayerOnMap(meshagerMap);
+  }
 }
 
 function renderMeshagerCard(inc) {
@@ -596,10 +685,15 @@ function renderMeshagerCard(inc) {
   const inj = incidentCasualty(inc, "injured");
   const dead = incidentCasualty(inc, "dead");
   const amb = incidentFacts(inc).ambulance;
-  const fwdBy = inc.forwarded_by ? (dispById(inc.forwarded_by) || {}).name : null;
   const summary = (inc.narrative || []).map((s) => s.text).join(" ");
-  const dispatched = (inc.dispatched || []).map((d) => `<span class="res-chip sm" title="${RES_HE[d.resource]}">${RES_ICON[d.resource] || ""}</span>`).join("");
-  return `<div class="card m-card" data-inc="${inc.incident_id}" style="--sev:${sevVar(sev.label)}">
+  // Show green checkmarks for sent resources and C2 escalation
+  const active = new Set((inc.dispatched || []).map((d) => d.resource));
+  const resChecks = Object.keys(RES_HE).filter((r) => active.has(r)).map((r) =>
+    `<span class="res-chip sm">${RES_HE[r]} ✓</span>`).join("");
+  const c2Check = inc.escalated_to_c2 ? `<span class="res-chip sm">חמ"ל ✓</span>` : "";
+  const merged = inc.call_ids.length > 1;
+  return `<div class="card m-card ${inc.review_flag ? "needs-review" : ""}" data-inc="${inc.incident_id}" style="--sev:${sevVar(sev.label)}">
+    ${inc.review_flag ? `<div class="m-review">⚠ ${esc(inc.review_reason || "האירוע אוחד — נא לבדוק מחדש")}</div>` : ""}
     <div class="card-top">
       <div>
         <div class="card-title">${esc(inc.title || EVENT_HE[inc.event_type] || inc.incident_id)}</div>
@@ -610,45 +704,42 @@ function renderMeshagerCard(inc) {
     <div class="m-summary" dir="rtl">${esc(summary) || "<span class='muted'>טרם חולץ תקציר…</span>"}</div>
     <div class="card-meta">
       <span class="chip wf-chip wf-${wf}">${WF_HE[wf]}</span>
-      ${amb ? `<span class="chip amb-chip">🚑 דרוש אמבולנס</span>` : ""}
-      <span class="chip">🩹 נפגעים: ${inj == null ? "—" : inj}${dead ? ` · ☠ ${dead}` : ""}</span>
-      ${dispatched ? `<span class="chip">${dispatched}</span>` : ""}
-      ${fwdBy ? `<span class="muted">מ: ${esc(fwdBy)}</span>` : ""}
+      ${merged ? `<span class="chip merged-chip">🔗 אוחד · ${inc.call_ids.length} שיחות</span>` : ""}
+      ${amb ? `<span class="chip amb-chip">דרוש אמבולנס</span>` : ""}
+      <span class="chip">נפגעים: ${inj == null ? "—" : inj}${dead ? ` · ☠ ${dead}` : ""}</span>
+      ${resChecks}${c2Check}
     </div>
   </div>`;
 }
 
 // --- חמ"ל dashboard ---
 function hamalMetrics() {
-  const incs = state.incidents;
+  // Only count escalated events for C2 dashboard
+  const incs = state.incidents.filter((i) => i.escalated_to_c2);
   const total = incs.length;
   const handled = incs.filter((i) => i.workflow_status === "resolved").length;
-  let injured = 0, dead = 0, injKnown = false, deadKnown = false;
   const sevCount = { low: 0, medium: 0, high: 0, critical: 0 };
   const typeCount = {};
   incs.forEach((inc) => {
-    const inj = incidentCasualty(inc, "injured"); if (inj != null) { injured += inj; injKnown = true; }
-    const d = incidentCasualty(inc, "dead"); if (d != null) { dead += d; deadKnown = true; }
     const lab = (effSev(inc) || {}).label || "low"; if (sevCount[lab] != null) sevCount[lab]++;
     const t = inc.event_type || "unknown"; typeCount[t] = (typeCount[t] || 0) + 1;
   });
-  return { total, active: total - handled, handled, injured, dead, injKnown, deadKnown, sevCount, typeCount };
+  return { total, active: total - handled, handled, sevCount, typeCount };
 }
 // table-first overview state
-let hamalFilter = "all";              // all | active | critical
+let hamalFilter = "all";              // all | open | resolved | critical
+let hamalSevFilter = "";              // "" | low | medium | high | critical
 let hamalSort = { key: "severity", dir: -1 }; // -1 desc, 1 asc
 
-const WF_ORDER = { new: 0, forwarded: 1, in_progress: 2, resolved: 3 };
+const WF_ORDER = { new: 0, forwarded: 1, in_progress: 2, escalated: 3, resolved: 4 };
+// Remove status column from hamal table
 const HAMAL_COLS = [
   { key: "title", label: "אירוע" },
   { key: "type", label: "סוג" },
   { key: "severity", label: "חומרה" },
-  { key: "status", label: "סטטוס" },
   { key: "location", label: "מיקום" },
   { key: "calls", label: "שיחות" },
   { key: "injured", label: "נפגעים" },
-  { key: "moked", label: "מוקדנית" },
-  { key: "meshager", label: "משגר" },
 ];
 const SORT_VAL = {
   title: (i) => i.title || i.incident_id,
@@ -658,12 +749,15 @@ const SORT_VAL = {
   location: (i) => { const l = (i.locations || []).find((x) => x.normalized || x.raw_text) || {}; return l.normalized || l.raw_text || ""; },
   calls: (i) => i.call_ids.length,
   injured: (i) => { const v = incidentCasualty(i, "injured"); return v == null ? -1 : v; },
-  moked: (i) => (i.dispatcher_ids || []).map((id) => (dispById(id) || {}).name).join(","),
-  meshager: (i) => (i.assigned_meshager_id ? (dispById(i.assigned_meshager_id) || {}).name : ""),
 };
 function incFilterPass(inc) {
-  if (hamalFilter === "active") return inc.workflow_status !== "resolved";
+  // C2 only sees escalated events
+  if (!inc.escalated_to_c2) return false;
+  if (hamalFilter === "open") return inc.workflow_status !== "resolved";
+  if (hamalFilter === "resolved") return inc.workflow_status === "resolved";
   if (hamalFilter === "critical") return (effSev(inc) || {}).label === "critical";
+  // Severity dropdown filter
+  if (hamalSevFilter && (effSev(inc) || {}).label !== hamalSevFilter) return false;
   return true;
 }
 
@@ -671,8 +765,8 @@ function hamalSignature() {
   const incSig = state.incidents.map((i) => [i.incident_id, i.title, i.event_type, effSev(i),
     i.workflow_status, i.call_ids.length, i.assigned_meshager_id, i.dispatcher_ids,
     incidentCasualty(i, "injured"), incidentCasualty(i, "dead"),
-    (i.locations || []).map((l) => [l.lat, l.lng, l.normalized])]);
-  return JSON.stringify([hamalFilter, hamalSort, incSig]);
+    (i.locations || []).map((l) => [l.lat, l.lng, l.normalized]), i.escalated_to_c2]);
+  return JSON.stringify([hamalFilter, hamalSevFilter, hamalSort, incSig]);
 }
 
 function renderHamal() {
@@ -683,7 +777,12 @@ function renderHamal() {
   const sig = hamalSignature();
   if (sig === lastHamalSig) return;
   lastHamalSig = sig;
-  drawMarkers(hamalMap, hamalLayer, { highlightMine: false, openAny: true });
+  drawMarkers(hamalMap, hamalLayer, {
+    highlightMine: false, openAny: true,
+    filterFn: (inc) => inc.escalated_to_c2
+  });
+  // Known large events on the C2 map too (contextual intelligence everywhere).
+  if (window.renderKnownLayerOnMap) window.renderKnownLayerOnMap(hamalMap);
   renderHamalTiles();
   renderHamalCharts();
   renderHamalTable();
@@ -696,9 +795,8 @@ function renderHamalTiles() {
   document.getElementById("hamal-tiles").innerHTML =
     tile('סה"כ אירועים', m.total) +
     tile("פעילים", m.active, "warn") +
-    tile("טופלו", m.handled, "ok") +
-    tile("נפגעים (הערכה)", m.injKnown ? m.injured : "—") +
-    tile("הרוגים (הערכה)", m.deadKnown ? m.dead : "—", m.dead ? "crit" : "");
+    tile("טופלו", m.handled, "ok");
+  // Removed: "נפגעים" and "הרוגים" tiles
 }
 
 function barChart(elId, rows) {
@@ -719,7 +817,7 @@ function renderHamalCharts() {
     { label: SEV_HE.medium, value: m.sevCount.medium, color: sevColor("medium") },
     { label: SEV_HE.low, value: m.sevCount.low, color: sevColor("low") },
   ]);
-  barChart("chart-type", Object.keys(m.typeCount).map((t) => ({ label: EVENT_HE[t] || t, value: m.typeCount[t] })));
+  // "by type" chart removed per dashboard spec — the map takes that space.
 }
 
 function renderHamalTable() {
@@ -732,21 +830,16 @@ function renderHamalTable() {
   const arrow = (k) => hamalSort.key === k ? (hamalSort.dir === 1 ? " ▲" : " ▼") : "";
   const head = HAMAL_COLS.map((c) => `<th data-sort="${c.key}" class="${hamalSort.key === c.key ? "sorted" : ""}">${c.label}${arrow(c.key)}</th>`).join("");
   const body = rows.map((inc) => {
-    const sev = effSev(inc) || {}; const wf = inc.workflow_status || "new";
+    const sev = effSev(inc) || {};
     const loc = (inc.locations || []).find((l) => l.normalized || l.raw_text) || {};
-    const owners = (inc.dispatcher_ids || []).map((id) => (dispById(id) || {}).name).filter(Boolean).join(", ");
-    const msh = inc.assigned_meshager_id ? (dispById(inc.assigned_meshager_id) || {}).name : "—";
     const inj = incidentCasualty(inc, "injured");
     return `<tr data-inc="${inc.incident_id}">
       <td>${esc(inc.title || inc.incident_id)}</td>
       <td>${esc(EVENT_HE[inc.event_type] || inc.event_type)}</td>
-      <td><span class="sev-badge sev-${sev.label} sm">${SEV_HE[sev.label] || ""} ${sev.score || ""}</span></td>
-      <td><span class="wf-chip wf-${wf}">${WF_HE[wf]}</span></td>
+      <td><span class="sev-badge sev-${sev.label} sm">${SEV_HE[sev.label] || ""} ${sev4(sev)}/4</span></td>
       <td>${esc(loc.normalized || loc.raw_text || "—")}</td>
       <td>${inc.call_ids.length}</td>
       <td>${inj == null ? "—" : inj}</td>
-      <td>${esc(owners || "—")}</td>
-      <td>${esc(msh)}</td>
     </tr>`;
   }).join("");
   el.innerHTML = `<table class="data-table">

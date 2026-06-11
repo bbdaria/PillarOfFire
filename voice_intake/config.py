@@ -22,7 +22,7 @@ GATHER_TIMEOUT = 8        # seconds of silence before giving up
 # Greeting played when the overflow call is answered. Asks the three core
 # intake questions in one breath (name / location / what happened).
 GREETING_TEXT = (
-    "מוקד מנהלת מאה שלום. כל הנציגים תפוסים. "
+    "מ שלום. כל הנציגים תפוסים. "
     "אנא אמור את שמך, מאיפה אתה מתקשר, ומה קרה."
 )
 

@@ -37,6 +37,8 @@ select { font-family: inherit; }
   display: flex; align-items: center; gap: 20px;
   padding: 14px 22px; background: var(--panel);
   border-bottom: 1px solid var(--border-soft);
+  position: sticky; top: 0; z-index: 30; /* stays put while the page scrolls */
+  flex-wrap: wrap;
 }
 .brand { display: flex; align-items: center; gap: 12px; }
 .flame { font-size: 26px; }
@@ -44,25 +46,9 @@ select { font-family: inherit; }
 .brand .en { color: var(--muted); font-weight: 400; font-size: 13px; }
 .tagline { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
 
-.who { display: flex; align-items: center; gap: 10px; margin-inline-start: auto; }
-.who-label { color: var(--muted); font-size: 13px; }
-.who-select {
-  display: flex; align-items: center; gap: 8px;
-  background: var(--panel-2); border: 1px solid var(--border);
-  border-radius: 999px; padding: 4px 6px 4px 12px;
-}
-.who-avatar {
-  width: 24px; height: 24px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; color: #0c0f14; background: var(--muted);
-}
-#dispatcher-select {
-  background: transparent; color: var(--text); border: none;
-  font-size: 14px; font-weight: 600; outline: none; padding: 4px 2px;
-}
-#dispatcher-select option { background: var(--panel-2); }
-
-.controls { display: flex; align-items: center; gap: 8px; }
+/* brand (icon · name · dashboard toggle) sits at the start (right, RTL);
+   controls (theme · upload · reset) are pushed to the far end (left). */
+.controls { display: flex; align-items: center; gap: 8px; margin-inline-start: auto; }
 button.primary {
   background: var(--accent); color: #1a1006; border: none;
   padding: 9px 16px; border-radius: 8px; font-weight: 700; font-size: 13px;
@@ -78,13 +64,17 @@ button:hover { filter: brightness(1.1); }
 .safety-banner {
   background: #1d1a12; color: #d2b372; border-bottom: 1px solid #322a18;
   padding: 6px 22px; font-size: 12px; text-align: center;
+  display: none; /* removed per DASHBOARDS.md */
 }
 
 /* ---------- Workspace ---------- */
 .workspace {
-  display: grid; grid-template-columns: 1fr 380px;
-  gap: 18px; padding: 18px 22px; align-items: start;
+  display: grid; grid-template-columns: 1fr 320px;
+  gap: 18px; padding: 16px 22px; align-items: start;
   max-width: 1500px; margin: 0 auto;
+  /* Grow with content; the page (not an inner box) scrolls so cards never
+     overlap. The map column stays in view via position:sticky below. */
+  min-height: calc(100vh - 64px);
 }
 .pane { min-width: 0; }
 .pane-head {
@@ -98,10 +88,36 @@ button:hover { filter: brightness(1.1); }
   border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 600;
 }
 
-/* Incident cards grid */
+/* Incident Kanban layout */
 .incident-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  flex: 1;
+}
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 14px;
+  align-items: start;
+}
+.kanban-col {
+  display: flex; flex-direction: column; gap: 10px;
+  min-width: 0;
+}
+.kanban-header {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 700; color: var(--text);
+  padding: 8px 10px; background: var(--panel);
+  border: 1px solid var(--border-soft); border-radius: 8px;
+  border-top: 3px solid var(--sev, var(--border));
+}
+.kanban-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex: none;
+}
+.kanban-cards {
+  display: flex; flex-direction: column; gap: 10px;
+  flex: 1;
+}
+.kanban-empty {
+  color: var(--muted-2); text-align: center; padding: 18px; font-size: 13px;
 }
 .empty {
   grid-column: 1 / -1; color: var(--muted);
@@ -160,9 +176,13 @@ button:hover { filter: brightness(1.1); }
 }
 
 /* ---------- Map ---------- */
-.map-pane { position: sticky; top: 18px; }
+.map-pane {
+  position: sticky; top: 80px;
+  display: flex; flex-direction: column;
+  height: calc(100vh - 96px);
+}
 .map {
-  height: 420px; border-radius: var(--radius); overflow: hidden;
+  flex: 1; min-height: 220px; border-radius: var(--radius); overflow: hidden;
   border: 1px solid var(--border-soft);
 }
 .leaflet-container { background: #0a0d12; }
@@ -316,9 +336,13 @@ details.match summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .toast.hidden { opacity: 0; transform: translateY(8px); pointer-events: none; }
 
 @media (max-width: 980px) {
-  .workspace { grid-template-columns: 1fr; }
-  .map-pane { position: static; }
-  .map { height: 300px; }
+  .workspace { grid-template-columns: 1fr; height: auto; }
+  .map-pane { position: static; height: auto; }
+  .map { min-height: 300px; flex: none; height: 300px; }
+  .kanban { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px) {
+  .kanban { grid-template-columns: 1fr; }
 }
 
 /* ========================================================================== */
@@ -540,7 +564,7 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 .role-switch {
   display: inline-flex; gap: 2px; background: var(--panel-2);
   border: 1px solid var(--border); border-radius: 10px; padding: 3px;
-  margin-inline: auto;
+  margin-inline-end: 8px; flex: none;
 }
 .role-switch .role-btn {
   background: transparent; color: var(--muted); border: none;
@@ -555,7 +579,33 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 /* views wrapper: each role view is a full section under <main class="views"> */
 .view[hidden] { display: none; }
 .meshager-view, .hamal-view {
-  padding: 18px 22px; max-width: 1500px; margin: 0 auto;
+  padding: 16px 22px; max-width: 1500px; margin: 0 auto;
+}
+
+/* --- Meshager split layout: list + map --- */
+.meshager-layout {
+  display: grid; grid-template-columns: 1fr 460px;
+  gap: 18px; align-items: start;
+  min-height: calc(100vh - 96px);
+}
+.meshager-list-pane {
+  display: flex; flex-direction: column;
+}
+.meshager-list {
+  display: flex; flex-direction: column; gap: 12px;
+  flex: 1;
+}
+.meshager-map-pane {
+  position: sticky; top: 80px;
+  height: calc(100vh - 96px);
+  display: flex; flex-direction: column;
+}
+.meshager-map-pane .map {
+  flex: 1; min-height: 220px;
+}
+@media (max-width: 900px) {
+  .meshager-layout { grid-template-columns: 1fr; height: auto; }
+  .meshager-map-pane { position: static; height: 350px; }
 }
 
 /* --- workflow status chips (shared) --- */
@@ -567,6 +617,7 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 .wf-forwarded { color: #6ea8fe; border-color: #2a3d57; background: rgba(110,168,254,.1); }
 .wf-in_progress { color: var(--high); border-color: #4a3a22; background: rgba(240,136,62,.1); }
 .wf-resolved { color: var(--low); border-color: #234a2c; background: rgba(63,185,80,.12); }
+.wf-escalated { color: #c97bd8; border-color: #4a2d54; background: rgba(201,123,216,.12); }
 
 /* --- resource chips --- */
 .res-chip {
@@ -579,9 +630,9 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 /* ============================================================
    משגר queue + summary cards
    ============================================================ */
-.meshager-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 14px;
+.meshager-grid, .meshager-list {
+  display: flex; flex-direction: column;
+  gap: 12px;
 }
 .m-card { cursor: pointer; }
 .m-summary {
@@ -700,15 +751,44 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 .tiles.strip .tile-val { font-size: 24px; }
 .tiles.strip .tile-lbl { margin-top: 5px; font-size: 11px; }
 
-/* operations layout: table centerpiece + side rail */
-.hamal-ops { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
-.ops-main { min-width: 0; }
-.ops-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+/* חמ"ל top strip: small counter boxes (right) + a narrow severity tracker */
+.hamal-topstrip {
+  display: flex; gap: 16px; align-items: stretch; margin-bottom: 16px; flex-wrap: wrap;
+}
+.hamal-topstrip #hamal-tiles {
+  display: flex; gap: 10px; margin: 0; flex: none; /* pack on the right, not full-width */
+}
+.hamal-topstrip #hamal-tiles .tile {
+  padding: 10px 18px; min-width: 86px;
+  /* center the number + label both horizontally AND vertically in the box */
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+}
+.hamal-topstrip #hamal-tiles .tile-val { font-size: 22px; }
+.hamal-topstrip #hamal-tiles .tile-lbl { margin-top: 4px; }
+.hamal-topstrip .sev-panel { flex: 0 1 360px; min-width: 240px; padding: 12px 16px; }
+.hamal-topstrip .sev-panel h3 { margin-bottom: 10px; font-size: 13px; }
+
+/* Hamal severity filter dropdown */
+.hamal-filter-select {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 6px 10px; font-size: 13px; font-family: inherit;
+  outline: none; margin-inline-start: 8px;
+}
+.hamal-filter-select:focus { border-color: var(--link); }
+.hamal-filter-select option { background: var(--panel-2); }
+
+/* operations layout: scrollable table column (left) + full-height map (right).
+   The map spans up to the header so it gets the most space. */
+.hamal-view { display: grid; grid-template-columns: 1fr 440px; gap: 16px; align-items: start; }
+.hamal-main { min-width: 0; }
+.ops-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .ops-bar .pane-hint { margin-inline-start: auto; }
-.ops-side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 18px; }
-.ops-side .panel { padding: 14px 16px; }
-.ops-side .panel h3 { margin-bottom: 10px; font-size: 13px; }
-.map.mini { height: 240px; }
+.hamal-side { position: sticky; top: 80px; height: calc(100vh - 96px); }
+.hamal-side .map-panel {
+  height: 100%; display: flex; flex-direction: column; padding: 12px 14px;
+}
+.hamal-side .map-panel h3 { margin-bottom: 10px; font-size: 13px; flex: none; }
+.hamal-side #hamal-map { flex: 1; min-height: 300px; margin: 0; }
 
 /* filter pills */
 .filters { display: inline-flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 3px; }
@@ -720,15 +800,14 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 .filter-btn.active { background: var(--accent); color: #1a1006; }
 
 /* sortable table */
-.ops-main .table-wrap { background: var(--panel); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 6px 14px 10px; }
+.hamal-main .table-wrap { background: var(--panel); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 6px 14px 10px; }
 .data-table th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
 .data-table th[data-sort]:hover { color: var(--text); }
 .data-table th.sorted { color: var(--accent); }
 
 @media (max-width: 1000px) {
-  .hamal-ops { grid-template-columns: 1fr; }
-  .ops-side { position: static; flex-direction: row; flex-wrap: wrap; }
-  .ops-side .panel { flex: 1; min-width: 220px; }
+  .hamal-view { grid-template-columns: 1fr; }
+  .hamal-side { position: static; height: 420px; }
 }
 
 /* ============================================================
@@ -743,3 +822,33 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 .fact.amb { background: rgba(248,81,73,.14); border-color: #5a2a2a; color: #f0a3a0; }
 .fact.crit { background: rgba(248,81,73,.18); border-color: #5a2a2a; color: #f8b0ad; }
 .chip.amb-chip { color: #f0883e; border-color: #4a3a22; background: rgba(240,136,62,.12); font-weight: 600; }
+
+/* ============================================================
+   Manual incident linking + post-merge review
+   ============================================================ */
+.link-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.link-list.hidden { display: none; }
+.link-opt {
+  display: flex; align-items: center; gap: 8px; text-align: start;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; cursor: pointer;
+}
+.link-opt:hover { border-color: var(--accent); filter: none; }
+.link-opt-title { font-weight: 600; }
+.link-opt .muted { margin-inline-start: auto; font-size: 12px; }
+
+/* post-merge re-review (shown to the משגר) */
+.review-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: rgba(240,136,62,.12); border: 1px solid #4a3a22; color: #f0b072;
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px;
+}
+.review-banner button { margin-inline-start: auto; }
+.m-card.needs-review { border-color: #6a4a22; box-shadow: 0 0 0 1px #6a4a22 inset; }
+.m-review {
+  background: rgba(240,136,62,.14); color: #f0b072; border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; font-weight: 600; margin-bottom: 10px;
+}
+.chip.merged-chip { color: #9fb3cc; border-color: #2c3a4b; background: #1b2530; font-weight: 600; }
+body.light .review-banner, body.light .m-review { color: #9a6b16; background: #fdeccd; border-color: #e9cf9a; }
+body.light .chip.merged-chip { background: #eef2f8; border-color: #d3dae5; color: #41576f; }

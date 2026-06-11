@@ -181,6 +181,7 @@ async def _simulate_call(call_id: str, dispatcher_id: str,
     _running[call_id] = True
     call = Call(call_id=call_id, timestamp=_now(),
                 color=store.next_color(), status="transcribing",
+                call_number=store.next_call_number(),
                 dispatcher_id=dispatcher_id)
     store.upsert_call(call)
     inc = _ensure_incident(call)  # card appears right away
@@ -237,7 +238,9 @@ async def upload(dispatcher_id: Optional[str] = Form(None), file: UploadFile = F
     call_id = f"upload-{_upload_seq}"
 
    
-    tmp_path = os.path.join(tempfile.gettempdir(), file.filename)
+    # Prefix with the unique call_id so parallel uploads of identically-named
+    # files don't clobber each other on disk.
+    tmp_path = os.path.join(tempfile.gettempdir(), f"{call_id}-{file.filename}")
     with open(tmp_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
@@ -465,7 +468,7 @@ async def forward_incident(incident_id: str, body: ForwardBody):
     return {"ok": True, "assigned_meshager_id": mid}
 
 
-_WORKFLOW_STATES = {"forwarded", "in_progress", "resolved"}
+_WORKFLOW_STATES = {"forwarded", "in_progress", "resolved", "escalated"}
 
 
 class StatusBody(BaseModel):
@@ -484,6 +487,27 @@ async def set_incident_status(incident_id: str, body: StatusBody):
 
 
 _RESOURCES = {"ambulance", "fire", "police"}
+
+
+@app.post("/api/incident/{incident_id}/ack_review")
+async def ack_review(incident_id: str):
+    """The משגר acknowledges a post-merge re-review; clears the review flag."""
+    inc = _get_incident_or_404(incident_id)
+    inc.review_flag = False
+    inc.review_reason = ""
+    store.upsert_incident(inc)
+    return {"ok": True}
+
+
+@app.post("/api/incident/{incident_id}/escalate")
+async def escalate_to_c2(incident_id: str):
+    """The משגר escalates the event to חמ\"\u05dc (C2 command center)."""
+    inc = _get_incident_or_404(incident_id)
+    inc.escalated_to_c2 = True
+    if inc.workflow_status not in ("resolved",):
+        inc.workflow_status = "escalated"
+    store.upsert_incident(inc)
+    return {"ok": True}
 
 
 class DispatchBody(BaseModel):
@@ -563,9 +587,22 @@ async def merge(body: MergeBody):
     if len(b.call_ids) > len(a.call_ids) or (
             len(b.call_ids) == len(a.call_ids) and b.created_at < a.created_at):
         survivor, absorbed = (b, a)
+    # Carry forward escalation/assignment from either side so a merge never
+    # "loses" an event that was already moving through the chain.
+    if absorbed.assigned_meshager_id and not survivor.assigned_meshager_id:
+        survivor.assigned_meshager_id = absorbed.assigned_meshager_id
+        survivor.workflow_status = absorbed.workflow_status
+    survivor.escalated_to_c2 = survivor.escalated_to_c2 or absorbed.escalated_to_c2
+
     matching.merge_incidents(survivor, absorbed)
     # Merge changed the call set -> refresh the LLM summary + severity once.
     await asyncio.to_thread(_reanalyze_incident, survivor)
+
+    # If the combined event is already in a משגר's hands, flag it for re-review:
+    # the picture changed and they may need to act differently.
+    if survivor.assigned_meshager_id:
+        survivor.review_flag = True
+        survivor.review_reason = "האירוע אוחד עם אירוע נוסף — ייתכן שצריך לעדכן את הטיפול"
     store.upsert_incident(survivor)
 
     # Any pending suggestion touching the absorbed incident is now resolved.
@@ -603,6 +640,7 @@ async def ingest(body: IngestChunk):
     if call is None:
         call = Call(call_id=body.call_id, timestamp=_now(),
                     color=store.next_color(), status="transcribing",
+                    call_number=store.next_call_number(),
                     dispatcher_id=body.dispatcher_id or DEFAULT_DISPATCHER)
     call.transcript = (call.transcript + " " + body.chunk).strip()
     call.analysis = analyzer.analyze(call.transcript)
