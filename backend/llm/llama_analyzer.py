@@ -30,6 +30,7 @@ from models import CallAnalysis, Casualties, Location, Severity
 from llm.base import Analyzer
 from llm.mock_analyzer import (
     MockAnalyzer, _find_event_type, _find_location, _find_hazards, _distress,
+    score_severity,
 )
 from known_events import geocode_precise  # street-level geocoding (Nominatim + fallback)
 
@@ -173,8 +174,14 @@ class LlamaAnalyzer(Analyzer):
             raw_haz = [raw_haz]
         hazards = _find_hazards(transcript + " " + " ".join(_as_text(h) for h in raw_haz))
 
-        score = max(0, min(10, _as_int(d.get("severity")) or 0))
-        severity = Severity(score=score, label=_label_for(score), reasoning="ניתוח LLM (Llama)")
+        # Severity from the EXTRACTED facts (event type + casualties + hazards) —
+        # the small LLM's own 0-10 number is unreliable (it scored a terror
+        # shooting 0/10). The model may only RAISE it, never lower it.
+        severity = score_severity(event_type, hazards, casualties, _distress(transcript), num_calls=1)
+        llm_score = max(0, min(10, _as_int(d.get("severity")) or 0))
+        if llm_score > severity.score:
+            severity = Severity(score=llm_score, label=_label_for(llm_score),
+                                reasoning=severity.reasoning)
 
         ambulance = bool(d.get("ambulance_needed")) or (injured is not None and injured > 0)
 
