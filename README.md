@@ -1,10 +1,15 @@
 # 🔥 Pillar of Fire · עמוד האש
 
+An emergency-response system for the Israeli **100** call center (police), in two parts:
 
-A first-responder dashboard that listens to incoming **Hebrew** emergency calls,
-transcribes them in real time, extracts structured incident details with an LLM,
-detects when multiple calls describe the **same event**, **clusters/merges**
-related calls into one incident, and presents the combined picture to responders.
+1. **Dashboard** — a hierarchical situational picture. Hebrew calls are transcribed
+   in real time (**ivrit-ai** STT), structured by an **LLM** (Llama), clustered when
+   multiple calls describe the **same event**, and routed through a command hierarchy
+   (call-taker → dispatcher → command center).
+2. **Auto-Operator** — an automated overflow agent. When human dispatchers are full,
+   Twilio routes calls to our number; the system holds a short **Hebrew conversation**,
+   transcribes the caller **live** with ivrit via Twilio Media Streams, and drops the
+   event straight into the dashboard.
 
 > **Decision-support only.** The system assists human responders — it does not
 > replace human judgement or official emergency protocols.
@@ -20,44 +25,78 @@ Hackathon 2026.
 # then open http://127.0.0.1:8000
 ```
 
-First run creates a virtualenv and installs FastAPI/uvicorn/pydantic. No API keys
-or GPU needed — the demo runs **fully offline**.
+First run creates a virtualenv, installs dependencies, and (with the default
+`STT_ENGINE=ivrit`) downloads the ivrit-ai Hebrew model (~1.6 GB, cached under
+`~/.cache/huggingface`). Every real engine **falls back to an offline mock** if its
+backend is unavailable, so the app always runs.
 
-### Workspace model
+| Concern | Default | Needs |
+|---------|---------|-------|
+| **STT** | `ivrit` (ivrit-ai `whisper-large-v3-turbo-ct2`, faster-whisper, CPU) | one-time model download |
+| **LLM** | `llama` (OpenAI-compatible endpoint, default Ollama) | `ollama serve` + `ollama pull llama3.1` |
+| **Voice** | Twilio Auto-Operator | a Twilio number + a public tunnel (e.g. `ngrok http 8000`) |
 
-The UI is a **per-dispatcher workspace**, not a control-room dashboard:
+Set `STT_ENGINE=mock` / `LLM_ENGINE=mock` to force the offline mocks.
 
-- A **dispatcher switcher** (top-right) chooses whose workspace you're in. You
-  see only **your** open incidents as calm cards.
-- Every finalized call opens **its own incident card** — nothing is merged
-  automatically.
-- Relatedness surfaces as a **merge suggestion** (⚠) — which can point to an
-  incident owned by **another dispatcher**. You **approve** or **reject** it.
-- Approving unifies the incidents into one **shared incident** visible in *all*
-  involved dispatchers' workspaces, while preserving **per-call provenance**.
-- Click a card → a **focused detail drawer** (transcript, structured summary,
-  merge suggestions, next steps). Hover any extracted fact to see its **source
-  call + dispatcher**.
-- The **map is shared/global**: one marker per incident, **color = severity**,
-  **size = number of merged calls**. Your own incidents get a white ring.
-- **⬆ Upload a recording** creates a new incident through the same pipeline.
+---
 
-In the UI click **▶ הדמיית שיחות נכנסות** ("Simulate incoming calls").
+## The dashboard — a command hierarchy
 
-## Demo scenario
+A **role switcher** (top bar) moves between the three tiers of the 100; each is its
+own view. A contextual person picker chooses *who* you are within a role.
 
-| Call | Dispatcher | Content | Result |
-|------|------------|---------|--------|
-| `call-1` | דריה | Explosion at a gas station on Herzl St, Tel Aviv — 2 injured | **inc-1** |
-| `call-2` | נועה | Fire / gas smell near the same gas station (different caller) | **inc-2** → suggests merge with inc-1 (**cross-dispatcher**) |
-| `call-3` | נועה | Traffic accident on Route 6 near Hadera | separate **inc-3** |
-| `call-4` | דריה | Noisy/partial call mentioning Herzl + smoke | **inc-4** → weak suggestion to inc-1 |
-| `call-5` | (logged-in) | Gunfire reports inside a party near Re'im | **inc-5** → **known-event context alert** (Nova festival) |
+### 1. מוקדנית — call-taker
+Your personal workspace of incident cards + the shared situational map.
+- **⬆ Upload a recording** (or an Auto-Operator call) opens an incident; the transcript
+  streams in live and the LLM fills in a summary, severity, tags, location and casualties.
+- Relatedness surfaces as a **merge suggestion (⚠)** — possibly to an incident handled
+  by someone else. You approve or reject; approving unifies them while preserving
+  **per-call provenance** (hover any fact to see its source call).
+- **Forward an event** to the **least-busy משגר** (automatic load-balancing), and
+  override its **priority**.
 
-Two headline interactions: `call-1` (Daria) and `call-2` (Noa) describe the same
-event from two operators, producing a **cross-dispatcher merge suggestion**; and
-`call-5` lands *inside* a pre-known large gathering, raising a **Known-Event
-context alert** (see below).
+### 2. משגר — dispatcher (takes action)
+A queue of events forwarded to *you*, shown as decision-ready summaries. For each:
+- **Dispatch resources** — 🚑 אמבולנס / 🚒 כבאית / 🚓 משטרה. Each button is a **toggle**
+  (press again to cancel); pressing twice never double-sends.
+- **Advance the status** — חדש → הועבר → בטיפול → טופל.
+- **Override priority**.
+
+### 3. חמ"ל — command & control
+A **table-first operational overview** of *all* events across the system:
+- KPI strip (total / active / handled / injured / dead estimates),
+- **filter** (all / active / critical) + a **sortable** all-events table,
+- side rail with severity & event-type **charts** and a **mini map**.
+
+The **map** is shared/global: one marker per incident, **color = severity**,
+**size = number of merged calls**.
+
+---
+
+## The Auto-Operator — automated overflow intake (Twilio voice)
+
+When the 100 is overwhelmed, the PBX routes calls to our Twilio number. The system:
+
+1. **Answers** and opens a live incident in the dashboard immediately.
+2. Holds a short **Hebrew conversation** — *"מה שמך?"* → *"מאיפה אתה מתקשר?"* →
+   *"מה קרה? … וציין אם יש נפגעים וכמה."* Twilio's `<Gather>` detects end-of-speech
+   automatically (no key press); prompts are pre-synthesized Hebrew audio (`<Play>`),
+   since Twilio has no Hebrew TTS.
+3. **Transcribes live** — Twilio **Media Streams** forks the caller's audio to a
+   WebSocket (`/voice/stream`); our **ivrit** STT transcribes each answer and the
+   event's transcript fills in **during the call**.
+4. **Triages** the transcript for critical Hebrew keywords (`ירי`, `פצוע`, `מחבל`, …)
+   → flags severity, runs the LLM, and the event is ready for a human dispatcher.
+
+**Set-up:** point your Twilio number's *Voice → "A call comes in"* webhook (POST) at
+`https://<your-tunnel>/voice/incoming`, run `ngrok http 8000`, and call the number.
+No Twilio API credentials are needed — the audio arrives directly over the WebSocket.
+
+Configured by `voice.py` (prompts, triage, caller-repeat tracking, TwiML). Pre-rendered
+prompt WAVs live in `backend/voice_audio/` and are regenerated (macOS `say -v Carmit`)
+whenever the prompt text changes.
+
+---
 
 ## Known Large Events — contextual intelligence layer
 
@@ -74,27 +113,23 @@ Three concepts are kept distinct:
 
 What you can do:
 
-- **📅 Known Events Calendar** (topbar) — list view grouped by day, with filters
-  (area, date range, type, status, min/max participants) and free-text search.
-  Click an event for details; jump straight to its map location.
-- **＋ אירוע חדש** — manually create one event (geocoding is **mocked**: enter
-  `lat/lng`, or an address/city resolved by a small built-in gazetteer).
-- **⬆ ייבוא Excel/CSV** — upload `.csv` or `.xlsx`, see validated rows + per-row
-  errors in a **preview**, then confirm. Imported rows are tagged
-  `source=excel_import`. CSV is parsed natively; `.xlsx` via a stdlib-only reader
-  (no `openpyxl`/`pandas`) so the demo stays fully offline.
-- On the **shared map**, known events render as **translucent, dashed, slate**
-  circles (radius = event area) — never emergency-bright unless an active alert
-  tints them amber.
-- Inside an **incident detail drawer**, a calm **context card** appears when the
-  incident is near/inside a time-relevant event: name, type, participants,
-  distance, time window, police/risk notes, and a cautious operational
-  *consideration* (decision-support only).
+- **📅 Known Events Calendar** (topbar, מוקדנית role) — list view grouped by day, with
+  filters (area, date range, type, status, participants) and free-text search.
+- **＋ אירוע חדש** — manually create one event (enter `lat/lng`, or an address resolved
+  by the geocoder).
+- **⬆ ייבוא Excel/CSV** — upload `.csv`/`.xlsx`, see validated rows + per-row errors in a
+  **preview**, then confirm. `.xlsx` is parsed with a stdlib-only reader (no
+  `openpyxl`/`pandas`).
+- On the shared map, known events render as **translucent dashed slate** circles
+  (radius = event area), tinting amber only on an active alert.
+- Inside an incident drawer, a calm **context card** appears when the incident is
+  near/inside a time-relevant event (name, participants, distance, time window,
+  police/risk notes, a cautious operational *consideration*).
 
-### Matching logic (`matchIncidentToKnownEvents`)
+### Matching logic (`match_incident_to_known_events`)
 
-For each incident with coordinates, every known event is scored on **distance**
-(haversine, meters) and **time relevance**:
+Each incident with coordinates is scored against every known event on **distance**
+(haversine) and **time relevance**:
 
 | Output | Meaning |
 |--------|---------|
@@ -102,60 +137,17 @@ For each incident with coordinates, every known event is scored on **distance**
 | `time_relation` | `active` / `starting_soon` (≤12 h) / `recently_ended` (≤6 h) / `scheduled` |
 | `alert_level` | `critical` (inside + active + ≥1000 participants), `important`, or `info` |
 
-Only spatially-close **and** time-relevant events become alerts; far-future or
-long-past events stay silent (but still show subtly on the map). All thresholds
-are env-configurable (`KE_PROXIMITY_METERS`, `KE_STARTING_SOON_HOURS`,
+Only spatially-close **and** time-relevant events become alerts. Thresholds are
+env-configurable (`KE_PROXIMITY_METERS`, `KE_STARTING_SOON_HOURS`,
 `KE_RECENTLY_ENDED_HOURS`, `KE_MASS_PARTICIPANTS`).
 
-## Architecture
+---
 
-```
-backend/
-  app.py            FastAPI: API + serves the frontend; real-time simulation
-  models.py         Pydantic schemas (the structured JSON contract)
-  store.py          In-memory store for calls, incidents & known events
-  matching.py       Similarity scoring, clustering/merging, incident severity
-  known_events.py   Known-event store helpers, mock geocoding, CSV/XLSX import,
-                    matchIncidentToKnownEvents (proximity + time-window matching)
-  demo_data.py      5 prerecorded Hebrew calls + location gazetteer
-  demo_known_events.py  5 seeded known large events (incl. the Nova/Re'im demo)
-  stt/              Speech-to-text abstraction
-    base.py           STTEngine interface
-    mock_stt.py       replays demo transcripts as timed chunks (default)
-    ivrit_stt.py      ivrit-ai Hebrew model placeholder (faster-whisper)
-  llm/              Analysis abstraction
-    base.py           Analyzer interface
-    mock_analyzer.py  rule-based Hebrew extractor (default, deterministic)
-    claude_analyzer.py real Claude API analyzer (optional)
-frontend/
-  index.html, style.css   vanilla dashboard shell + Leaflet map
-  app.js                  dispatcher workspace, incidents, map, drawer
-  known_events.js         known-events map layer, calendar, form, import, alert
-```
+## How call-clustering works
 
-Each layer (STT, LLM analysis, clustering, UI) is swappable in isolation.
-
-### Pluggable real models
-
-```bash
-# Real Hebrew STT via ivrit-ai (https://huggingface.co/ivrit-ai):
-pip install faster-whisper
-STT_ENGINE=ivrit ./run.sh          # then POST audio paths to /api/ingest
-
-# Real LLM analysis via Claude:
-pip install anthropic
-export ANTHROPIC_API_KEY=sk-...
-LLM_ENGINE=claude ./run.sh
-```
-
-Both fall back to the offline mock if the dependency/key is missing, so the demo
-never breaks.
-
-## How matching works
-
-A newly analyzed incident is scored against every other open incident across
-five signals (weighted). If the best score clears `0.55` a **merge suggestion**
-is raised (never an automatic merge):
+A newly analyzed incident is scored against every other open incident across five
+weighted signals. If the best score clears `0.55` a **merge suggestion** is raised
+(never an automatic merge):
 
 | Signal | Weight | How |
 |--------|--------|-----|
@@ -165,40 +157,103 @@ is raised (never an automatic merge):
 | Semantic similarity | 0.20 | Hebrew token Jaccard over transcripts |
 | Shared entities | 0.15 | overlap of hazards + location tokens |
 
-The full per-signal breakdown is shown in the incident detail drawer, so
-responders see **why** a merge was suggested — nothing is merged silently.
+The full per-signal breakdown is shown in the incident drawer, so responders see
+**why** a merge was suggested — nothing is merged silently.
+
+---
+
+## Architecture
+
+```
+backend/
+  app.py            FastAPI: dashboard API + Auto-Operator voice + serves frontend
+  voice.py          Twilio voice agent: TwiML, prompts, keyword triage, caller tracking
+  voice_audio/      pre-synthesized Hebrew prompt WAVs (greeting, questions, closing)
+  models.py         Pydantic schemas (the structured JSON contract)
+  store.py          In-memory store; seeds the role hierarchy (moked/meshager/hamal)
+  matching.py       Similarity scoring, clustering/merging, incident severity
+  known_events.py   Known-event helpers, geocoding (Nominatim + city gazetteer),
+                    CSV/XLSX import, match_incident_to_known_events
+  demo_data.py      Hebrew location gazetteer (used by the mock analyzer)
+  demo_known_events.py  seeded known large events (incl. the Nova/Re'im demo)
+  stt/              Speech-to-text abstraction (chosen by STT_ENGINE)
+    base.py           STTEngine interface
+    ivrit_stt.py      ivrit-ai Hebrew model via faster-whisper (default)
+    mock_stt.py       inert stub fallback
+  llm/              Analysis abstraction (chosen by LLM_ENGINE)
+    base.py           Analyzer interface
+    llama_analyzer.py Llama via an OpenAI-compatible endpoint, e.g. Ollama (default)
+    claude_analyzer.py Anthropic Claude analyzer (optional)
+    mock_analyzer.py  rule-based Hebrew extractor (offline fallback)
+frontend/
+  index.html, style.css   role switcher, three views, Leaflet map
+  app.js                  moked workspace, meshager queue, hamal overview, drawer
+  known_events.js         known-events map layer, calendar, form, import, alert
+```
+
+Each layer (STT, LLM, clustering, voice, UI) is swappable in isolation.
+
+### Pluggable engines
+
+```bash
+# STT — ivrit-ai Hebrew model (default). Streams real-time chunks from audio.
+STT_ENGINE=ivrit  IVRIT_MODEL=ivrit-ai/whisper-large-v3-turbo-ct2 ./run.sh
+
+# LLM — Llama via an OpenAI-compatible endpoint (default; Ollama).
+ollama serve && ollama pull llama3.1
+LLM_ENGINE=llama  LLAMA_BASE_URL=http://localhost:11434/v1  LLAMA_MODEL=llama3.1 ./run.sh
+
+# LLM — Anthropic Claude (alternative):
+export ANTHROPIC_API_KEY=sk-...
+LLM_ENGINE=claude ./run.sh
+```
+
+The LLM is called **once per transcript** (and once more when calls merge) and returns
+a compact JSON — summary, caller, tags, location, ambulance-needed, injured, severity —
+kept small for speed. Addresses are geocoded street-level via OpenStreetMap **Nominatim**
+(falling back to a city gazetteer offline).
+
+---
 
 ## API
 
+**Dashboard**
+
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/dispatchers` | list operators (workspaces) |
-| POST | `/api/simulate/{call_id}` | stream one demo call |
-| POST | `/api/simulate-all` | launch the full scenario (staggered) |
-| POST | `/api/upload` | create an incident from a "recorded" call `{dispatcher_id, filename}` |
-| POST | `/api/merge` | approve a merge `{suggestion_id}` (or `{incident_a, incident_b}`) |
+| GET | `/api/dispatchers` | list users (with `role`) |
+| POST | `/api/upload` | open an incident from an uploaded audio file (multipart) |
+| POST | `/api/incident/{id}/forward` | forward to the least-busy משגר `{by}` |
+| POST | `/api/incident/{id}/status` | set workflow status `{status}` |
+| POST | `/api/incident/{id}/dispatch` | toggle a resource `{resource, by}` |
+| POST | `/api/incident/{id}/priority` | override priority `{label, by}` |
+| POST | `/api/merge` | approve a merge `{suggestion_id}` or `{incident_a, incident_b}` |
 | POST | `/api/suggestion/{id}/reject` | dismiss a merge suggestion |
-| POST | `/api/ingest` | ingest a real transcript chunk `{call_id, chunk, final, dispatcher_id}` |
-| GET | `/api/state` | full snapshot (calls, incidents w/ `event_context`, dispatchers, suggestions, known_events) — polled |
-| GET | `/api/demo-calls` | list available demo calls |
-| POST | `/api/reset` | clear calls, incidents & suggestions (**known events persist** — reference data) |
-| GET | `/api/known-events` | list all known large events (live status) |
-| POST | `/api/known-events` | create one known event (manual form; geocodes if no lat/lng) |
-| POST | `/api/known-events/import/preview` | parse+validate a `.csv`/`.xlsx` (`{filename, content_b64}`) — no insert |
-| POST | `/api/known-events/import/confirm` | insert the validated `{payloads}` from a preview |
+| GET | `/api/state` | full snapshot (calls, incidents, users, suggestions, known events) — polled |
+| POST | `/api/reset` | clear calls/incidents/suggestions (known events persist) |
+| GET/POST | `/api/known-events` | list / create known large events |
+| POST | `/api/known-events/import/preview` · `/confirm` | validate then insert a `.csv`/`.xlsx` |
+
+**Auto-Operator (Twilio)**
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/voice/incoming` | open the incident, start the media stream, greet + ask Q1 |
+| POST | `/voice/gather` | an answer finished → transcribe segment (ivrit) + next question |
+| WS | `/voice/stream` | Twilio Media Streams: live caller audio → ivrit STT |
+| GET | `/voice/audio/{clip}` | serve a pre-synthesized Hebrew prompt clip |
 
 ## Data model
 
 | Entity | Key fields |
 |--------|-----------|
-| **Dispatcher** | `dispatcher_id`, `name`, `color` (identity tint) |
-| **Call** | `call_id`, `transcript`, `analysis`, `color` (provenance), `dispatcher_id`, `incident_id` |
-| **Incident** | `incident_id`, `title`, `severity`, `call_ids`, `dispatcher_ids` (owners), `status` (open/merged), `merged` (field → per-source contributions), `locations` |
-| **MergeSuggestion** | `incident_a`, `incident_b`, `score` (explainable breakdown), `status` |
-| **KnownEvent** | `id`, `name`, `type`, `expected_participants`, `start_time`/`end_time`, `location` (raw/normalized address, lat, lng, `radius_meters`), `organizer`, `police_notes`, `risk_notes`, `status`, `source` (manual/excel_import) |
-| **EventContextMatch** | `known_event_id`, `distance_meters`, `relation`, `time_relation`, `alert_level`, `reason` (+ denormalized event fields for display) |
+| **Dispatcher** (user) | `dispatcher_id`, `name`, `color`, `role` (`moked`/`meshager`/`hamal`) |
+| **Call** | `call_id`, `transcript`, `analysis`, `status`, `color`, `dispatcher_id`, `incident_id` |
+| **CallAnalysis** | `summary`, `event_type`, `tags`, `caller`, `location`, `casualties`, `ambulance_needed`, `severity`, `date`/`time`, … |
+| **Incident** | `title`, `severity`, `call_ids`, `dispatcher_ids`, `status` (open/merged), `workflow_status` (new→forwarded→in_progress→resolved), `assigned_meshager_id`, `dispatched[]`, `priority_override`, `narrative`, `locations` |
+| **ResourceDispatch** | `resource` (ambulance/fire/police), `at`, `by` |
+| **MergeSuggestion** | `incident_a`, `incident_b`, `score` (explainable), `status` |
+| **KnownEvent** / **EventContextMatch** | planned gathering + its match to an incident (distance, relation, time-relation, alert level) |
 
-Merging is **never automatic** — a suggestion is raised when incident similarity
-clears `0.55`, and only a dispatcher's approval unifies them.
-=======
-
+Merging is **never automatic** — a suggestion is raised when similarity clears `0.55`,
+and only a dispatcher's approval unifies the incidents.

@@ -10,6 +10,13 @@ export STT_ENGINE="${STT_ENGINE:-ivrit}"
 export IVRIT_MODEL="${IVRIT_MODEL:-ivrit-ai/whisper-large-v3-turbo-ct2}"
 # ----------------------------------------------------
 
+# --- Auto-Operator (Twilio voice) ---
+# Each answer is recorded and transcribed by our ivrit STT. Fetching the Twilio
+# recording requires your account credentials — set these before calling:
+#   export TWILIO_ACCOUNT_SID=ACxxxxxxxx
+#   export TWILIO_AUTH_TOKEN=xxxxxxxx
+# ----------------------------------------------------
+
 # --- Set default environment variables for the LLM analyzer ---
 export LLM_ENGINE="${LLM_ENGINE:-llama}"
 # OpenAI-compatible endpoint (Ollama by default). Falls back to the rule-based
