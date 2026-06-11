@@ -9,22 +9,24 @@ Model
 
 Endpoints
   GET  /api/dispatchers          list operators (workspaces)
-  POST /api/simulate/{call_id}   start streaming a demo call (real-time chunks)
-  POST /api/simulate-all         launch the full demo scenario (staggered)
-  POST /api/upload               create an incident from a "recorded" call
+  POST /api/upload               create an incident from a recorded audio file
   POST /api/merge                approve a merge (by suggestion or incident pair)
   POST /api/suggestion/{id}/reject   dismiss a merge suggestion
   GET  /api/state                full snapshot for polling
-  GET  /api/demo-calls           list available demo calls
   POST /api/reset                clear all calls, incidents & suggestions
   POST /api/ingest               ingest a raw transcript chunk (real intake hook)
 """
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from datetime import datetime, timezone
+import shutil
 from typing import Dict, Optional
+import tempfile
+from fastapi import UploadFile, File, Form
+
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -37,7 +39,6 @@ from stt import get_stt_engine
 from llm import get_analyzer
 import matching
 import known_events
-from demo_data import DEMO_CALLS, UPLOAD_CALLS, CALL_DISPATCHER
 from demo_known_events import seed_known_events
 
 app = FastAPI(title="Pillar of Fire")
@@ -49,10 +50,30 @@ analyzer = get_analyzer()
 # data and persist across /api/reset (only the live call picture is cleared).
 seed_known_events()
 
-CHUNK_DELAY_SEC = float(os.environ.get("CHUNK_DELAY_SEC", "1.1"))
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("pillar")
+
+# Real STT yields segments as fast as the model decodes them; no artificial
+# pacing. (Default >0 only matters if a replaying engine is ever wired back in.)
+CHUNK_DELAY_SEC = float(os.environ.get("CHUNK_DELAY_SEC", "0"))
 DEFAULT_DISPATCHER = "d-daria"
 _running: Dict[str, bool] = {}  # guard against double-launching the same call
-_upload_seq = 0  # rotates through the prerecorded upload scripts
+_upload_seq = 0  # gives each uploaded recording a unique call id
+
+
+@app.on_event("startup")
+async def _warm_stt() -> None:
+    """Load the STT model in the background so the first upload isn't stuck
+    waiting on a multi-GB download + model load, and so config errors (bad
+    model id, missing weights) surface in the server log immediately."""
+    async def warm():
+        try:
+            log.info("warming STT engine (%s)…", type(stt).__name__)
+            await asyncio.to_thread(stt.warmup)
+            log.info("STT engine ready")
+        except Exception:
+            log.exception("STT warmup failed — uploads will report an error")
+    asyncio.create_task(warm())
 
 
 def _now() -> str:
@@ -91,36 +112,51 @@ def _finalize_call_into_incident(call: Call) -> None:
 
 async def _simulate_call(call_id: str, dispatcher_id: str,
                          script_key: Optional[str] = None) -> None:
-    """Stream a (demo or uploaded) call's chunks, then finalize its incident.
+    """Transcribe a call's audio into its incident, streaming chunks live.
 
     The incident card is opened immediately so the live transcript streams into
     it; merge suggestions are computed once the call is fully analyzed.
-    `script_key` lets an uploaded call reuse a prerecorded chunk script while
-    keeping a unique call_id of its own.
+    `script_key` is the audio file path for an uploaded recording.
     """
     script_key = script_key or call_id
     if _running.get(call_id):
         return
     _running[call_id] = True
+    call = Call(call_id=call_id, timestamp=_now(),
+                color=store.next_color(), status="transcribing",
+                dispatcher_id=dispatcher_id)
+    store.upsert_call(call)
+    inc = _ensure_incident(call)  # card appears right away
     try:
-        call = Call(call_id=call_id, timestamp=_now(),
-                    color=store.next_color(), status="transcribing",
-                    dispatcher_id=dispatcher_id)
-        store.upsert_call(call)
-        inc = _ensure_incident(call)  # card appears right away
-
-        # Stream chunks with a delay to simulate real-time transcription.
-        for chunk in stt.stream_chunks(script_key):
+        # Pull chunks off the event loop: real STT (model load + decode) is
+        # blocking, so iterate the generator in a worker thread. This keeps the
+        # card visible and the transcript streaming in immediately instead of
+        # freezing every poll until transcription finishes.
+        chunks = stt.stream_chunks(script_key)
+        _DONE = object()
+        while True:
+            chunk = await asyncio.to_thread(next, chunks, _DONE)
+            if chunk is _DONE:
+                break
             call.transcript = (call.transcript + " " + chunk).strip()
             call.analysis = analyzer.analyze(call.transcript)  # progressive extraction
             store.upsert_call(call)
             matching.assemble_incident(inc)  # keep the card in sync
             store.upsert_incident(inc)
-            await asyncio.sleep(CHUNK_DELAY_SEC)
+            if CHUNK_DELAY_SEC:
+                await asyncio.sleep(CHUNK_DELAY_SEC)
+            else:
+                await asyncio.sleep(0)  # yield so polls render the new text
 
         call.status = "analyzed"
         store.upsert_call(call)
         _finalize_call_into_incident(call)
+    except Exception as exc:  # surface STT/model failures instead of hanging
+        log.exception("transcription failed for %s", call_id)
+        call.status = "error"
+        note = f"[שגיאת תמלול: {exc}]"
+        call.transcript = (call.transcript + " " + note).strip() if call.transcript else note
+        store.upsert_call(call)
     finally:
         _running[call_id] = False
 
@@ -130,71 +166,23 @@ async def dispatchers():
     return [d.model_dump() for d in store.active_dispatchers()]
 
 
-@app.post("/api/simulate/{call_id}")
-async def simulate(call_id: str):
-    if call_id not in DEMO_CALLS:
-        raise HTTPException(404, "unknown demo call")
-    dispatcher_id = CALL_DISPATCHER.get(call_id, DEFAULT_DISPATCHER)
-    asyncio.create_task(_simulate_call(call_id, dispatcher_id))
-    return {"ok": True, "call_id": call_id}
-
-
-class SimulateAllBody(BaseModel):
-    dispatcher_id: Optional[str] = None
-
-
-@app.post("/api/simulate-all")
-async def simulate_all(body: SimulateAllBody | None = None):
-    """Replay the demo scenario, one call fully after another.
-
-    Calls are routed relative to the requesting dispatcher: most arrive in her
-    own workspace, while one (the gas-station fire) lands on a *different*
-    dispatcher — producing the cross-dispatcher merge suggestion. This means
-    whichever operator is logged in actually receives incoming calls.
-    """
-    primary = (body.dispatcher_id if body else None) or DEFAULT_DISPATCHER
-    others = [d.dispatcher_id for d in store.active_dispatchers()
-              if d.dispatcher_id != primary]
-    partner = others[0] if others else primary
-    # call-5 (gunfire near Re'im) lands in the primary workspace so the logged-in
-    # dispatcher sees the headline "known event nearby" context alert.
-    routing = {"call-1": primary, "call-2": partner,
-               "call-3": primary, "call-4": primary, "call-5": primary}
-
-    async def runner():
-        # Sequential: each call finishes (and opens its incident) before the
-        # next begins, as the operator works calls one at a time.
-        for cid in DEMO_CALLS.keys():
-            await _simulate_call(cid, routing.get(cid, primary))
-
-    asyncio.create_task(runner())
-    return {"ok": True, "calls": list(DEMO_CALLS.keys()), "primary": primary, "partner": partner}
-
-
-class UploadBody(BaseModel):
-    dispatcher_id: Optional[str] = None
-    filename: Optional[str] = None
-
-
 @app.post("/api/upload")
-async def upload(body: UploadBody):
-    """Create a new incident from a 'recorded' call.
-
-    Dependency-free for the offline demo: the client sends the chosen file's
-    name; we replay a prerecorded transcript through the same STT→analyze→
-    incident pipeline a live recording would use. A real deployment would send
-    the audio bytes here and run them through the ivrit-ai STT engine.
-    """
+async def upload(dispatcher_id: Optional[str] = Form(None), file: UploadFile = File(...)):
+    """Create a new incident from a real recorded audio file."""
     global _upload_seq
-    dispatcher_id = body.dispatcher_id or DEFAULT_DISPATCHER
-    keys = list(UPLOAD_CALLS.keys())
-    script_key = keys[_upload_seq % len(keys)]
+    disp_id = dispatcher_id or DEFAULT_DISPATCHER
+
     _upload_seq += 1
     call_id = f"upload-{_upload_seq}"
-    asyncio.create_task(_simulate_call(call_id, dispatcher_id, script_key=script_key))
-    return {"ok": True, "call_id": call_id, "filename": body.filename}
 
+   
+    tmp_path = os.path.join(tempfile.gettempdir(), file.filename)
+    with open(tmp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
+    asyncio.create_task(_simulate_call(call_id, disp_id, script_key=tmp_path))
+    
+    return {"ok": True, "call_id": call_id, "filename": file.filename}
 class MergeBody(BaseModel):
     suggestion_id: Optional[str] = None
     incident_a: Optional[str] = None
@@ -269,11 +257,6 @@ async def ingest(body: IngestChunk):
         store.upsert_call(call)
         _finalize_call_into_incident(call)
     return {"ok": True}
-
-
-@app.get("/api/demo-calls")
-async def demo_calls():
-    return [{"call_id": cid, "title": spec["title"]} for cid, spec in DEMO_CALLS.items()]
 
 
 # --- Known Large Events (the pre-known intelligence layer) -----------------

@@ -1,12 +1,7 @@
-"""Prerecorded Hebrew demo calls + a tiny location gazetteer.
+"""A tiny Hebrew location gazetteer used to geocode transcripts.
 
-Scenario:
-  call-1 + call-2  -> same incident (gas-station explosion/fire on Herzl St,
-                      Tel Aviv) seen from two different callers.
-  call-3           -> a separate, unrelated traffic accident on Route 6.
-  call-4           -> noisy / partial call, weakly related to the Herzl event.
-
-Each call is split into chunks to simulate a real-time transcript stream.
+The mock analyzer matches location phrases in a transcript against this table to
+drop map pins. A real deployment would call a geocoder behind the same shape.
 """
 from __future__ import annotations
 
@@ -23,94 +18,4 @@ GAZETTEER = {
     "רעים": {"normalized": "אזור רעים, עוטף עזה", "lat": 31.3855, "lng": 34.4512},
     "ראם": {"normalized": "אזור רעים, עוטף עזה", "lat": 31.3855, "lng": 34.4512},
     "מסיבה ברעים": {"normalized": "מתחם המסיבה, רעים", "lat": 31.3850, "lng": 34.4500},
-}
-
-DEMO_CALLS = {
-    "call-1": {
-        "title": "פיצוץ בתחנת דלק - הרצל",
-        "chunks": [
-            "הלו, מוקד? יש פיצוץ ענק!",
-            "בתחנת הדלק ברחוב הרצל בתל אביב.",
-            "אני רואה עשן שחור וריח חזק של גז.",
-            "יש אנשים פצועים על הרצפה, לפחות שניים.",
-            "תשלחו אמבולנס מהר בבקשה, זה דחוף!",
-        ],
-    },
-    "call-2": {
-        "title": "שריפה ליד תחנת דלק - הרצל",
-        "chunks": [
-            "שלום, אני מתקשר מרחוב הרצל.",
-            "יש שריפה גדולה ליד תחנת הדלק.",
-            "שתי מכוניות עולות באש ואנשים צועקים.",
-            "אני מריח גז חזק, אני חושש מפיצוץ נוסף.",
-            "יש המון עשן, אני כמעט לא רואה כלום.",
-        ],
-    },
-    "call-3": {
-        "title": "תאונת דרכים - כביש 6",
-        "chunks": [
-            "כן שלום, הייתה תאונת דרכים.",
-            "בכביש 6 ליד חדרה.",
-            "שתי מכוניות התנגשו במהירות.",
-            "יש נהג אחד פצוע אבל הוא בהכרה.",
-            "צריך גרר ואמבולנס בבקשה.",
-        ],
-    },
-    "call-4": {
-        "title": "שיחה רעשנית / מידע חלקי",
-        "chunks": [
-            "הלו? הלו? אתם שומעים אותי?",
-            "אני... לא בטוח... יש רעש חזק מאוד.",
-            "נראה לי שזה ברחוב הרצל... יש עשן?",
-            "הקשר גרוע, אני לא...",
-        ],
-    },
-    # Headline known-event scenario: gunfire reports next to the Nova festival
-    # at Re'im. This incident fires the "known event nearby" context alert.
-    "call-5": {
-        "title": "דיווח על ירי - רעים",
-        "chunks": [
-            "מוקד? אני במסיבה ברעים, יש ירי!",
-            "אנשים בורחים לכל הכיוונים, יש המון אנשים פה.",
-            "אני שומע יריות, נראה לי שיש פצועים.",
-            "תשלחו כוחות מהר, יש אלפי אנשים במתחם!",
-        ],
-    },
-}
-
-# Extra prerecorded calls used by the "upload a recording" flow. They are not
-# part of the live demo scenario but produce meaningful structured data (and a
-# cross-incident merge suggestion) when uploaded, simulating a real recording.
-UPLOAD_CALLS = {
-    "call-rec-1": {
-        "title": "הקלטה: עד נוסף - הרצל",
-        "chunks": [
-            "מקליט הודעה למוקד.",
-            "ראיתי את הפיצוץ ליד תחנת הדלק ברחוב הרצל בתל אביב.",
-            "יש הרבה עשן והגיעו כוחות כיבוי.",
-            "נראה שיש עוד פצוע אחד שלא טופל.",
-        ],
-    },
-    "call-rec-2": {
-        "title": "הקלטה: היפוך משאית - כביש 6",
-        "chunks": [
-            "הקלטה מהשטח.",
-            "משאית התהפכה בכביש 6 ליד חדרה.",
-            "יש פקק ענק והנהג לכוד בתא.",
-            "צריך חילוץ וכבאית בדחיפות.",
-        ],
-    },
-}
-
-ALL_CALLS = {**DEMO_CALLS, **UPLOAD_CALLS}
-
-# Which dispatcher handles each scripted demo call. call-1 (Daria) and call-2
-# (Noa) describe the SAME gas-station event from two operators — this is what
-# makes the headline merge suggestion cross-dispatcher.
-CALL_DISPATCHER = {
-    "call-1": "d-daria",
-    "call-2": "d-noa",
-    "call-3": "d-noa",
-    "call-4": "d-daria",
-    "call-5": "d-amir",
 }

@@ -25,3 +25,11 @@ class STTEngine(ABC):
     def transcribe(self, source: str) -> str:
         """Convenience: full transcript as a single string."""
         return " ".join(self.stream_chunks(source))
+
+    def warmup(self) -> None:
+        """Optionally pre-load weights so the first transcription is fast.
+
+        No-op by default; engines with a heavy model (e.g. ivrit) override this
+        to load eagerly at startup instead of on the first request.
+        """
+        return None

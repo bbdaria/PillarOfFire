@@ -3,6 +3,13 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# --- Set default environment variables for real STT ---
+export STT_ENGINE="${STT_ENGINE:-ivrit}"
+# ivrit-ai Hebrew model in CTranslate2 / faster-whisper format. Downloaded from
+# Hugging Face on first run (~1.6GB) and cached under ~/.cache/huggingface.
+export IVRIT_MODEL="${IVRIT_MODEL:-ivrit-ai/whisper-large-v3-turbo-ct2}"
+# ----------------------------------------------------
+
 # Create venv + install deps on first run.
 if [ ! -d ".venv" ]; then
   echo "Creating virtualenv and installing dependencies..."

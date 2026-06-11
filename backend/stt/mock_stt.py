@@ -1,20 +1,17 @@
-"""Mock STT: replays prerecorded Hebrew transcripts as timed chunks.
+"""Mock STT stub.
 
-This simulates a real-time stream without needing audio or a GPU, so the demo
-runs anywhere. The chunk boundaries come from demo_data.py.
+The prerecorded demo calls were removed, so this engine no longer has anything
+to replay — it exists only as an inert fallback so the engine selector in
+stt/__init__.py stays importable. Real transcription uses the ivrit engine
+(STT_ENGINE=ivrit); see stt/ivrit_stt.py.
 """
 from __future__ import annotations
 
 from typing import Iterator
 
 from stt.base import STTEngine
-from demo_data import ALL_CALLS
 
 
 class MockSTT(STTEngine):
     def stream_chunks(self, source: str) -> Iterator[str]:
-        call = ALL_CALLS.get(source)
-        if not call:
-            return
-        for chunk in call["chunks"]:
-            yield chunk
+        return iter(())

@@ -76,9 +76,21 @@ function renderDispatcherSelect() {
   const d = dispById(me);
   if (d) { av.textContent = initials(d.name); av.style.background = d.color; }
 }
-document.getElementById("dispatcher-select").onchange = (e) => {
-  me = e.target.value; localStorage.setItem("dispatcher_id", me);
-  openIncidentId = null; render();
+document.getElementById("file-input").onchange = async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  toast(`מעבד הקלטה: ${f.name}`);
+
+  const formData = new FormData();
+  formData.append("file", f);
+  formData.append("dispatcher_id", me);
+
+  await fetch("/api/upload", {
+    method: "POST",
+    body: formData
+  });
+
+  e.target.value = "";
 };
 
 // --- incident cards ---
@@ -87,7 +99,7 @@ function renderIncidents() {
   const mine = myIncidents();
   document.getElementById("incidents-count").textContent = mine.length;
   if (!mine.length) {
-    wrap.innerHTML = `<div class="empty">אין אירועים פעילים במרחב שלך.<br>לחצי על «הדמיית שיחות נכנסות» או העלי הקלטה כדי להתחיל.</div>`;
+    wrap.innerHTML = `<div class="empty">אין אירועים פעילים במרחב שלך.<br>העלי הקלטה כדי להתחיל.</div>`;
     return;
   }
   wrap.innerHTML = mine.map((inc) => {
@@ -129,8 +141,8 @@ function drawerSignature(inc) {
   const calls = inc.call_ids.map((id) => { const c = callById(id) || {}; return [id, c.status, c.transcript]; });
   const sug = suggestionsFor(inc.incident_id).map((x) => x.s.suggestion_id);
   return JSON.stringify([inc.incident_id, inc.title, inc.severity,
-    inc.narrative, inc.dispatcher_ids, inc.recommended_next_steps, calls, sug,
-    inc.event_context]);
+  inc.narrative, inc.dispatcher_ids, inc.recommended_next_steps, calls, sug,
+  inc.event_context]);
 }
 document.getElementById("scrim").onclick = closeDrawer;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
@@ -216,7 +228,8 @@ function renderDrawer() {
   const transcripts = inc.call_ids.map((id) => {
     const c = callById(id); if (!c) return "";
     const disp = dispById(c.dispatcher_id);
-    const liveTag = c.status === "transcribing" ? `<span class="dot pulse" style="background:var(--link)"></span>מתמלל` : "נותח";
+    const liveTag = c.status === "transcribing" ? `<span class="dot pulse" style="background:var(--link)"></span>מתמלל`
+      : c.status === "error" ? `<span style="color:#e35d6a">⚠ שגיאת תמלול</span>` : "נותח";
     return `<div class="tr-block">
       <div class="tr-head"><span class="dot" style="background:${c.color}"></span>${esc(c.call_id)}${disp ? " · " + esc(disp.name) : ""} <span class="muted" style="margin-inline-start:auto">${liveTag}</span></div>
       <div class="tr-text" dir="rtl">${esc(c.transcript) || "…"}</div>
@@ -342,19 +355,12 @@ document.getElementById("btn-theme").onclick = () => {
 };
 
 // --- controls ---
-document.getElementById("btn-all").onclick = () => { api("/api/simulate-all", "POST", { dispatcher_id: me }); toast("מדמה שיחות נכנסות…"); };
 document.getElementById("btn-reset").onclick = async () => {
   await api("/api/reset", "POST"); openIncidentId = null;
   for (const k in knownCalls) delete knownCalls[k];
   if (map) map._fitOnce = false;
 };
 document.getElementById("btn-upload").onclick = () => document.getElementById("file-input").click();
-document.getElementById("file-input").onchange = async (e) => {
-  const f = e.target.files[0]; if (!f) return;
-  await api("/api/upload", "POST", { dispatcher_id: me, filename: f.name });
-  toast(`מעבד הקלטה: ${f.name}`);
-  e.target.value = "";
-};
 
 // --- main render + poll ---
 function render() {

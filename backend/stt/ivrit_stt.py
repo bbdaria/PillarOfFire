@@ -35,9 +35,15 @@ class IvritSTT(STTEngine):
             self._model = WhisperModel(MODEL_ID, device="auto", compute_type="int8")
         return self._model
 
+    def warmup(self) -> None:
+        # Pre-load (and download, on first run) the weights at startup.
+        self._ensure_model()
+
     def stream_chunks(self, source: str) -> Iterator[str]:
         model = self._ensure_model()
-        # `source` is an audio file path here.
+        # `source` is an audio file path here. Segments are yielded as the model
+        # decodes through the audio, so the UI gets incremental ("on the fly")
+        # transcript text rather than waiting for the whole file.
         segments, _info = model.transcribe(source, language="he")
         for seg in segments:
             text = seg.text.strip()
