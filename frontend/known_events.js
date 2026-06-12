@@ -369,7 +369,8 @@
     // Build the map fresh (the modal owns its own Leaflet instance).
     filterMap = L.map("ke-map", { zoomControl: true, attributionControl: false })
       .setView([31.7, 35.0], 7);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(filterMap);
+    if (window.addBaseTiles) window.addBaseTiles(filterMap);
+    else L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 20, detectRetina: true, subdomains: "abcd" }).addTo(filterMap);
     const pts = [];
     events.forEach((e) => {
       const loc = e.location, emoji = TYPE_EMOJI[e.type] || "📍";

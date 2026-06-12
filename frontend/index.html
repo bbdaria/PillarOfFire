@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>עמוד האש · Pillar of Fire</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=14" />
 </head>
 <body>
   <header class="topbar">
@@ -19,13 +19,13 @@
       <nav class="role-switch" id="role-switch" aria-label="בחירת תפקיד">
         <button class="role-btn" data-role="moked">מוקדנית</button>
         <button class="role-btn" data-role="meshager">משגר</button>
-        <button class="role-btn" data-role="hamal">חמ"ל</button>
+        <button class="role-btn" data-role="hamal">מצודה</button>
       </nav>
     </div>
 
     <div class="controls">
       <button id="btn-theme" class="ghost subtle" title="מצב בהיר / כהה" aria-label="החלפת מצב תצוגה">🌙</button>
-      <button id="btn-calendar" class="ghost subtle" title="אירועים מוכרים">📅 אירועים מוכרים</button>
+      <button id="btn-calendar" class="ghost subtle" title="אירועים מוכרים"><svg class="icn" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/></svg> אירועים מוכרים</button>
       <button id="btn-upload" class="primary moked-only">⬆ העלאת הקלטות</button>
       <input id="file-input" type="file" accept="audio/*" multiple hidden />
       <button id="btn-reset" class="ghost subtle">איפוס</button>
@@ -48,10 +48,11 @@
         <div class="legend">
           <div class="legend-row">
             <span class="legend-title">חומרה</span>
-            <span class="legend-item"><i class="sw" style="background:var(--low)"></i>נמוכה</span>
-            <span class="legend-item"><i class="sw" style="background:var(--medium)"></i>בינונית</span>
-            <span class="legend-item"><i class="sw" style="background:var(--high)"></i>גבוהה</span>
-            <span class="legend-item"><i class="sw" style="background:var(--critical)"></i>קריטית</span>
+            <div class="sev-spectrum">
+              <span class="sev-end">נמוכה</span>
+              <i class="sev-grad"></i>
+              <span class="sev-end">קריטית</span>
+            </div>
           </div>
           <div class="legend-row">
             <span class="legend-title">גודל</span>
@@ -81,7 +82,7 @@
       </div>
     </section>
 
-    <!-- ===== חמ"ל: table-first operational overview ===== -->
+    <!-- ===== מצודה: table-first operational overview ===== -->
     <section class="view hamal-view" id="view-hamal" hidden>
       <div class="hamal-main">
         <div class="hamal-topstrip">
@@ -124,7 +125,7 @@
   <div id="seg-tip" class="seg-tip hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=15"></script>
-  <script src="known_events.js?v=5"></script>
+  <script src="app.js?v=17"></script>
+  <script src="known_events.js?v=6"></script>
 </body>
 </html>

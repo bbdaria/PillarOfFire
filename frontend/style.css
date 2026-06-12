@@ -8,12 +8,13 @@
   --text: #e8eef5;
   --muted: #8a97a9;
   --muted-2: #616e80;
-  --accent: #ff7a45;
-  --link: #6ea8fe;
-  --low: #3fb950;
-  --medium: #d6a30b;
-  --high: #f0883e;
-  --critical: #f85149;
+  --accent: #f0875c;
+  --link: #7fb0f0;
+  /* softer, pastel-leaning severity palette */
+  --low: #5fb985;
+  --medium: #dcb84e;
+  --high: #e8965a;
+  --critical: #e0655f;
   --radius: 12px;
   --shadow: 0 10px 40px rgba(0,0,0,.45);
 }
@@ -25,7 +26,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", Arial, "Noto Sans Hebrew", sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
 }
 h1, h2, h3 { margin: 0; font-weight: 600; }
@@ -60,6 +61,28 @@ button.ghost {
 }
 button.ghost.subtle { background: transparent; color: var(--muted); }
 button:hover { filter: brightness(1.1); }
+
+/* monochrome inline icons (theme / calendar buttons) */
+.icn { display: inline-block; vertical-align: -2px; }
+#btn-theme { display: inline-flex; align-items: center; justify-content: center; }
+#btn-calendar { display: inline-flex; align-items: center; gap: 6px; }
+
+/* inline-edit affordances (transcript / summary) */
+.edit-link {
+  margin-inline-start: 8px; background: transparent; border: 1px solid var(--border);
+  color: var(--muted); border-radius: 6px; padding: 2px 9px; font-size: 11px;
+  font-weight: 600; text-transform: none; letter-spacing: 0; cursor: pointer; flex: none;
+}
+.section-title .edit-link { margin-inline-start: auto; }
+.edit-link:hover { color: var(--text); border-color: var(--muted-2); filter: none; }
+.edit-area {
+  width: 100%; min-height: 90px; resize: vertical; box-sizing: border-box;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; font-family: inherit; font-size: 13px; line-height: 1.6;
+  outline: none;
+}
+.edit-area:focus { border-color: var(--link); }
+.edit-actions { display: flex; gap: 8px; margin-top: 8px; }
 
 .safety-banner {
   background: #1d1a12; color: #d2b372; border-bottom: 1px solid #322a18;
@@ -107,7 +130,6 @@ button:hover { filter: brightness(1.1); }
   font-size: 13px; font-weight: 700; color: var(--text);
   padding: 8px 10px; background: var(--panel);
   border: 1px solid var(--border-soft); border-radius: 8px;
-  border-top: 3px solid var(--sev, var(--border));
 }
 .kanban-dot {
   width: 10px; height: 10px; border-radius: 50%; flex: none;
@@ -185,7 +207,7 @@ button:hover { filter: brightness(1.1); }
   flex: 1; min-height: 220px; border-radius: var(--radius); overflow: hidden;
   border: 1px solid var(--border-soft);
 }
-.leaflet-container { background: #0a0d12; }
+.leaflet-container { background: #eef2f7; }
 .legend {
   margin-top: 12px; background: var(--panel); border: 1px solid var(--border-soft);
   border-radius: 10px; padding: 10px 12px; font-size: 12px; color: var(--muted);
@@ -198,6 +220,15 @@ button:hover { filter: brightness(1.1); }
 .sw.ring { background: transparent; border: 2px solid var(--muted); }
 .sw.ring.sm { width: 9px; height: 9px; }
 .sw.ring.lg { width: 16px; height: 16px; }
+
+/* severity spectrum (continuous gradient instead of separate dots) */
+.sev-spectrum { display: inline-flex; align-items: center; gap: 8px; flex: 1; min-width: 150px; }
+.sev-end { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.sev-grad {
+  flex: 1; height: 8px; border-radius: 999px; min-width: 60px;
+  /* RTL: low at the right (start) → critical at the left (end) */
+  background: linear-gradient(to left, var(--low), var(--medium), var(--high), var(--critical));
+}
 
 /* ---------- Drawer (incident detail) ---------- */
 .scrim {
@@ -236,6 +267,7 @@ button:hover { filter: brightness(1.1); }
 .section-title {
   color: var(--muted); font-size: 11px; text-transform: uppercase;
   letter-spacing: .06em; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px;
 }
 
 /* Merge suggestion banner */
@@ -520,24 +552,25 @@ details.match summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 /* a few hardcoded dark accents are re-stated below.                           */
 /* ========================================================================== */
 body.light {
-  --bg: #eef1f6;
+  --bg: #fbfcfe;            /* near-white background */
   --panel: #ffffff;
-  --panel-2: #f1f4f9;
-  --panel-3: #e6ebf2;
-  --border: #d3dae5;
-  --border-soft: #e4e9f0;
-  --text: #1a2230;
-  --muted: #5a6878;
-  --muted-2: #8694a5;
-  --accent: #f4621f;
-  --link: #2563eb;
-  --low: #2e9e4d;
-  --medium: #c98a00;
-  --high: #e06a26;
-  --critical: #e23b30;
-  --shadow: 0 10px 36px rgba(31,45,68,.18);
+  --panel-2: #f5f7fb;
+  --panel-3: #eef1f7;
+  --border: #dde3ec;
+  --border-soft: #eef1f6;
+  --text: #25303f;
+  --muted: #67748a;
+  --muted-2: #9aa6b6;
+  --accent: #ef8a5e;       /* softer */
+  --link: #5b8def;
+  /* pastel severity */
+  --low: #6cc28a;
+  --medium: #e3c45f;
+  --high: #ec9d65;
+  --critical: #e07670;
+  --shadow: 0 10px 36px rgba(31,45,68,.12);
 }
-body.light .leaflet-container { background: #dde4ec; }
+body.light .leaflet-container { background: #eef2f7; }
 body.light .safety-banner { background: #fdf4e3; color: #9a6b16; border-bottom-color: #f0e2c4; }
 body.light .chip.suggestion { background: #fdeccd; border-color: #e9cf9a; color: #9a6b16; }
 body.light .chip.known-near { background: #eef2f8; border-color: #d3dae5; color: #41576f; }
@@ -557,7 +590,7 @@ body.light .sev-badge.sev-critical { color: #fff; }
 body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 
 /* ============================================================
-   Hierarchical roles (מוקדנית → משגר → חמ"ל)
+   Hierarchical roles (מוקדנית → משגר → מצודה)
    ============================================================ */
 
 /* --- role switcher in the top bar --- */
@@ -635,6 +668,9 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
   gap: 12px;
 }
 .m-card { cursor: pointer; }
+/* severity badge aligned to the (inline) end — the left, in this RTL layout */
+.m-card .card-top { align-items: center; }
+.m-card .card-top .sev-badge { margin-inline-start: auto; }
 .m-summary {
   margin-top: 10px; color: var(--text); font-size: 13px; line-height: 1.55;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
@@ -684,7 +720,7 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 .prio-btn.active { opacity: 1; border-color: var(--text); }
 
 /* ============================================================
-   חמ"ל dashboard
+   מצודה dashboard
    ============================================================ */
 .tiles {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -736,7 +772,7 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 }
 
 /* ============================================================
-   Updated roles UI: resource toggle + table-first חמ"ל overview
+   Updated roles UI: resource toggle + table-first מצודה overview
    ============================================================ */
 
 /* dispatched resource button (toggle on) */
@@ -751,7 +787,7 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 .tiles.strip .tile-val { font-size: 24px; }
 .tiles.strip .tile-lbl { margin-top: 5px; font-size: 11px; }
 
-/* חמ"ל top strip: small counter boxes (right) + a narrow severity tracker */
+/* מצודה top strip: small counter boxes (right) + a narrow severity tracker */
 .hamal-topstrip {
   display: flex; gap: 16px; align-items: stretch; margin-bottom: 16px; flex-wrap: wrap;
 }
@@ -822,6 +858,15 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
 .fact.amb { background: rgba(248,81,73,.14); border-color: #5a2a2a; color: #f0a3a0; }
 .fact.crit { background: rgba(248,81,73,.18); border-color: #5a2a2a; color: #f8b0ad; }
 .chip.amb-chip { color: #f0883e; border-color: #4a3a22; background: rgba(240,136,62,.12); font-weight: 600; }
+
+/* ============================================================
+   Remove dark/black borders from colored tags (cleaner pastel look)
+   ============================================================ */
+.wf-chip,
+.chip.live, .chip.suggestion, .chip.amb-chip, .chip.merged-chip, .chip.known-near,
+.fact.amb, .fact.crit { border-color: transparent; }
+/* active priority pill: emphasize with a soft inner ring, not a black border */
+.prio-row .prio-btn.active { border-color: transparent; box-shadow: 0 0 0 2px var(--panel) inset; }
 
 /* ============================================================
    Manual incident linking + post-merge review

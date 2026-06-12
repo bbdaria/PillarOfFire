@@ -691,6 +691,39 @@ async def override_priority(incident_id: str, body: PriorityBody):
     return {"ok": True}
 
 
+class TranscriptBody(BaseModel):
+    transcript: str
+
+
+@app.post("/api/call/{call_id}/transcript")
+async def edit_call_transcript(call_id: str, body: TranscriptBody):
+    """Manually correct a call's transcript. Shared state -> every dashboard
+    that shows this call updates on its next poll."""
+    call = store.get_call(call_id)
+    if not call:
+        raise HTTPException(404, "unknown call")
+    call.transcript = body.transcript
+    store.upsert_call(call)
+    return {"ok": True}
+
+
+class SummaryBody(BaseModel):
+    summary: str
+
+
+@app.post("/api/incident/{incident_id}/summary")
+async def edit_incident_summary(incident_id: str, body: SummaryBody):
+    """Manually edit the auto-generated incident summary. Keeps existing source
+    provenance but replaces the narrative text with one edited segment."""
+    inc = _get_incident_or_404(incident_id)
+    sources = []
+    if inc.narrative and isinstance(inc.narrative, list):
+        sources = inc.narrative[0].get("sources", []) if inc.narrative else []
+    inc.narrative = [{"text": body.summary, "sources": sources}]
+    store.upsert_incident(inc)
+    return {"ok": True}
+
+
 class MergeBody(BaseModel):
     suggestion_id: Optional[str] = None
     incident_a: Optional[str] = None

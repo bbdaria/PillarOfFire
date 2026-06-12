@@ -62,7 +62,7 @@ A queue of events forwarded to *you*, shown as decision-ready summaries. For eac
 - **Advance the status** — חדש → הועבר → בטיפול → טופל.
 - **Override priority**.
 
-### 3. חמ"ל — command & control
+### 3. מצודה — command & control
 A **table-first operational overview** of *all* events across the system:
 - KPI strip (total / active / handled / injured / dead estimates),
 - **filter** (all / active / critical) + a **sortable** all-events table,

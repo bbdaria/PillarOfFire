@@ -6,11 +6,11 @@ const state = { calls: [], incidents: [], dispatchers: [], suggestions: [], know
 
 // --- role + identity (no real auth; demo) -------------------------------
 const ROLES = ["moked", "meshager", "hamal"];
-const ROLE_HE = { moked: "מוקדנית", meshager: "משגר", hamal: 'חמ"ל' };
+const ROLE_HE = { moked: "מוקדנית", meshager: "משגר", hamal: 'מצודה' };
 const ROLE_TAGLINE = {
   moked: "מרחב עבודה אישי למוקדנית · איחוד שיחות חכם",
   meshager: "ניהול אירועים שהועברו · שליחת כוחות וקבלת החלטות",
-  hamal: 'תמונת מצב כלל־מערכתית · מרכז שליטה (חמ"ל)',
+  hamal: 'תמונת מצב כלל־מערכתית · מרכז שליטה (מצודה)',
 };
 const ROLE_DEFAULT_USER = { moked: "d-daria", meshager: "m-shahar", hamal: "h-mefaked" };
 let role = localStorage.getItem("role") || "moked";
@@ -38,7 +38,7 @@ const FIELD_LABEL = {
   summary: "תקציר", location: "מיקום", casualties: "נפגעים", hazards: "סכנות",
   urgency_indicators: "דחיפות", distress_level: "מצוקה", missing_information: "מידע חסר",
 };
-const WF_HE = { new: "חדש", forwarded: "הועבר למשגר", in_progress: "בטיפול", resolved: "טופל", escalated: 'הועבר לחמ"ל' };
+const WF_HE = { new: "חדש", forwarded: "הועבר למשגר", in_progress: "בטיפול", resolved: "טופל", escalated: 'הועבר למצודה' };
 const RES_HE = { ambulance: "אמבולנס", fire: "כבאית", police: "משטרה" };
 const RES_ICON = { ambulance: "🚑", fire: "🚒", police: "🚓" };
 const PRIORITIES = ["low", "medium", "high", "critical"];
@@ -69,9 +69,10 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.add("hidden"), 2600);
 }
 
-function sevBadge(sev, small) {
+function sevBadge(sev, small, noNum) {
   if (!sev) return "";
-  return `<span class="sev-badge sev-${sev.label} ${small ? "sm" : ""}">${esc(SEV_HE[sev.label] || sev.label)} · ${sev4(sev)}/4</span>`;
+  const num = noNum ? "" : ` · ${sev4(sev)}/4`;
+  return `<span class="sev-badge sev-${sev.label} ${small ? "sm" : ""}">${esc(SEV_HE[sev.label] || sev.label)}${num}</span>`;
 }
 function avatar(disp, cls = "av") {
   if (!disp) return "";
@@ -210,24 +211,21 @@ function renderIncidentCard(inc) {
   const sev = effSev(inc) || {};
   const live = incidentIsLive(inc);
   const sugg = suggestionsFor(inc.incident_id);
-  const owners = (inc.dispatcher_ids || []).map((id) => avatar(dispById(id))).join("");
-  const nCalls = inc.call_ids.length;
   const wf = inc.workflow_status || "new";
+  // Severity is conveyed by the colored edge bar (--sev) — no explicit text needed.
   return `<div class="card ${sugg.length ? "has-suggestion" : ""}" data-inc="${inc.incident_id}" style="--sev:${sevVar(sev.label)}">
     <div class="card-top">
       <div>
         <div class="card-title">${esc(inc.title || EVENT_HE[inc.event_type] || inc.incident_id)}</div>
         <div class="card-sub">${esc(EVENT_HE[inc.event_type] || inc.event_type)}</div>
       </div>
-      ${sevBadge(sev, true)}
     </div>
     <div class="card-meta">
       ${live ? `<span class="chip live"><span class="dot pulse" style="background:var(--link)"></span>מתמלל…</span>` : ""}
-      <span class="chip">🔗 ${inc.call_ids.map(id => "#" + esc(callById(id)?.call_number || id)).join(", ")}</span>
+      <span class="chip">🔗 ${inc.call_ids.length} ${inc.call_ids.length === 1 ? "שיחה" : "שיחות"}</span>
       ${sugg.length ? `<span class="chip suggestion">⚠ הצעת איחוד</span>` : ""}
       ${wf !== "new" ? `<span class="chip wf-chip wf-${wf}">${WF_HE[wf]}</span>` : ""}
       ${(inc.event_context && inc.event_context.length) ? `<span class="chip known-near">📍 אירוע ידוע בקרבת מקום</span>` : ""}
-      <span class="owners">${owners}</span>
     </div>
   </div>`;
 }
@@ -340,14 +338,17 @@ function renderDrawer() {
     ${f.tags.length ? `<span class="fact">🏷 ${f.tags.map(esc).join(" · ")}</span>` : ""}
   </div>`;
 
-  // live transcripts, one block per linked call
+  // Editing is allowed for the call-taker / dispatcher, not the read-only C2 view.
+  const canEdit = role !== "hamal";
+
+  // live transcripts, one block per linked call (editable)
   const transcripts = inc.call_ids.map((id) => {
     const c = callById(id); if (!c) return "";
     const liveTag = c.status === "transcribing" ? `<span class="dot pulse" style="background:var(--link)"></span>מתמלל`
       : c.status === "error" ? `<span style="color:#e35d6a">⚠ שגיאת תמלול</span>` : "נותח";
     return `<div class="tr-block">
-      <div class="tr-head"><span class="dot" style="background:${c.color}"></span>שיחה ${esc(c.call_number || c.call_id)} <span class="muted" style="margin-inline-start:auto">${liveTag}</span></div>
-      <div class="tr-text" dir="rtl">${esc(c.transcript) || "…"}</div>
+      <div class="tr-head"><span class="dot" style="background:${c.color}"></span>שיחה ${esc(c.call_number || c.call_id)} <span class="muted" style="margin-inline-start:auto">${liveTag}</span>${canEdit ? `<button class="edit-link" data-edit-call="${esc(id)}">עריכה</button>` : ""}</div>
+      <div class="tr-text" id="tr-${esc(id)}" dir="rtl">${esc(c.transcript) || "…"}</div>
     </div>`;
   }).join("");
 
@@ -385,9 +386,9 @@ function renderDrawer() {
       ${sugg.length ? `<div class="section">${sugg.map(renderSuggestion).join("")}</div>` : ""}
       ${window.renderContextAlertHTML ? window.renderContextAlertHTML(inc) : ""}
       <div class="section">
-        <div class="section-title">תמונת מצב · רחפי על משפט לצפייה במקורות</div>
+        <div class="section-title">תמונת מצב · רחפי על משפט לצפייה במקורות${canEdit ? `<button class="edit-link" id="edit-summary">עריכת הסיכום</button>` : ""}</div>
         ${factsHtml}
-        ${narrative}
+        <div id="dr-summary">${narrative}</div>
       </div>
       <div class="section">
         <div class="section-title">תמלול חי</div>
@@ -404,9 +405,60 @@ function renderDrawer() {
   document.getElementById("dr-close").onclick = closeDrawer;
   drawer.querySelectorAll("[data-merge]").forEach((b) => (b.onclick = () => doMerge(b.dataset.merge)));
   drawer.querySelectorAll("[data-reject]").forEach((b) => (b.onclick = () => doReject(b.dataset.reject)));
+  // Inline editing: summary + each call transcript.
+  const esBtn = drawer.querySelector("#edit-summary");
+  if (esBtn) esBtn.onclick = () => editSummary(inc.incident_id);
+  drawer.querySelectorAll("[data-edit-call]").forEach((b) =>
+    (b.onclick = () => editTranscript(b.dataset.editCall)));
   if (window.bindContextAlert) window.bindContextAlert(drawer);
   bindSegHovers(drawer);
   bindActionFooter(drawer, inc);
+}
+
+// While an inline editor is open, suppress the polling re-render so typing
+// isn't wiped. Saving/cancelling clears it and forces a fresh render.
+let drawerEditing = false;
+function editorHTML(value) {
+  return `<textarea class="edit-area" dir="rtl">${esc(value)}</textarea>
+    <div class="edit-actions">
+      <button class="act-btn primary" data-save>שמירה</button>
+      <button class="act-btn" data-cancel>ביטול</button>
+    </div>`;
+}
+function editSummary(incId) {
+  const inc = incById(incId); if (!inc) return;
+  const host = document.getElementById("dr-summary"); if (!host) return;
+  drawerEditing = true;
+  const cur = (inc.narrative || []).map((s) => s.text).join(" ");
+  host.innerHTML = editorHTML(cur);
+  host.querySelector("[data-save]").onclick = async () => {
+    const val = host.querySelector("textarea").value.trim();
+    const res = await api(`/api/incident/${incId}/summary`, "POST", { summary: val });
+    drawerEditing = false; lastDrawerSig = null;
+    toast(res && res.ok ? "הסיכום עודכן" : "שמירה נכשלה — ודא שהשרת עודכן");
+    await poll();
+  };
+  host.querySelector("[data-cancel]").onclick = () => {
+    drawerEditing = false; lastDrawerSig = null; renderDrawer();
+  };
+  host.querySelector("textarea").focus();
+}
+function editTranscript(callId) {
+  const c = callById(callId); if (!c) return;
+  const host = document.getElementById(`tr-${callId}`); if (!host) return;
+  drawerEditing = true;
+  host.innerHTML = editorHTML(c.transcript || "");
+  host.querySelector("[data-save]").onclick = async () => {
+    const val = host.querySelector("textarea").value;
+    const res = await api(`/api/call/${callId}/transcript`, "POST", { transcript: val });
+    drawerEditing = false; lastDrawerSig = null;
+    toast(res && res.ok ? "התמלול עודכן" : "שמירה נכשלה — ודא שהשרת עודכן");
+    await poll();
+  };
+  host.querySelector("[data-cancel]").onclick = () => {
+    drawerEditing = false; lastDrawerSig = null; renderDrawer();
+  };
+  host.querySelector("textarea").focus();
 }
 
 // --- role action footer in the drawer (forward / dispatch / status / priority) ---
@@ -419,15 +471,9 @@ function renderActionFooter(inc) {
   const prioBtns = PRIORITIES.map((p) =>
     `<button class="prio-btn sev-${p} ${prio.label === p ? "active" : ""}" data-prio="${p}">${SEV_HE[p]}</button>`).join("");
 
-  let roleActions = "";
-  if (role === "moked") {
-    // Forward (only if not already forwarded — "העבר מחדש" removed).
-    const fwd = inc.assigned_meshager_id ? "" : `
-        <div class="act-label">העברה למשגר</div>
-        <div class="act-row">
-          <button class="act-btn primary" id="fwd-btn">העבר למשגר הפנוי ביותר ▸</button>
-        </div>`;
-    // Manual link: combine this incident with another so the LLM merges their info.
+  // Manual link: combine this incident with another so the LLM re-summarises
+  // their merged information. Available to BOTH the call-taker and the dispatcher.
+  function linkSectionHTML() {
     const others = state.incidents.filter((i) =>
       i.status === "open" && i.incident_id !== inc.incident_id);
     const linkOpts = others.length
@@ -437,10 +483,21 @@ function renderActionFooter(inc) {
           <span class="muted">${o.call_ids.length} שיחות</span>
         </button>`).join("")
       : `<div class="muted" style="padding:8px 4px">אין אירועים אחרים לקישור כרגע</div>`;
-    roleActions = `${fwd}
+    return `
       <div class="act-label">קישור לאירוע אחר</div>
       <div class="act-row"><button class="act-btn" id="link-btn">🔗 קשר לאירוע אחר</button></div>
       <div id="link-list" class="link-list hidden">${linkOpts}</div>`;
+  }
+
+  let roleActions = "";
+  if (role === "moked") {
+    // Forward (only if not already forwarded — "העבר מחדש" removed).
+    const fwd = inc.assigned_meshager_id ? "" : `
+        <div class="act-label">העברה למשגר</div>
+        <div class="act-row">
+          <button class="act-btn primary" id="fwd-btn">העבר למשגר הפנוי ביותר ▸</button>
+        </div>`;
+    roleActions = `${fwd}${linkSectionHTML()}`;
   } else if (role === "meshager") {
     const active = new Set((inc.dispatched || []).map((d) => d.resource));
     // Resource buttons WITHOUT emojis, with green checkmark when active
@@ -448,14 +505,15 @@ function renderActionFooter(inc) {
       `<button class="res-btn ${active.has(r) ? "active" : ""}" data-res="${r}">${RES_HE[r]}${active.has(r) ? " ✓" : ""}</button>`).join("");
     // C2 escalation button
     const isEscalated = inc.escalated_to_c2;
-    const c2Btn = `<button class="res-btn ${isEscalated ? "active" : ""}" id="c2-btn">${isEscalated ? 'חמ"ל ✓' : 'העבר לחמ"ל'}</button>`;
+    const c2Btn = `<button class="res-btn ${isEscalated ? "active" : ""}" id="c2-btn">${isEscalated ? 'מצודה ✓' : 'העבר למצודה'}</button>`;
     const steps = ["in_progress", "resolved"].map((s) =>
       `<button class="wf-btn ${wf === s ? "active" : ""}" data-wf="${s}">${WF_HE[s]}</button>`).join("");
     roleActions = `
       <div class="act-label">שליחת כוחות / העברה (לחיצה נוספת מבטלת)</div>
       <div class="act-row">${resBtns}${c2Btn}</div>
       <div class="act-label">סטטוס טיפול</div>
-      <div class="act-row">${steps}</div>`;
+      <div class="act-row">${steps}</div>
+      ${linkSectionHTML()}`;
   }
 
   // Post-merge review banner (shown to the משגר who already holds the event).
@@ -533,7 +591,7 @@ async function doPriority(id, label) {
 }
 async function doEscalate(id) {
   await api(`/api/incident/${id}/escalate`, "POST");
-  toast('האירוע הועבר לחמ"ל'); await poll();
+  toast('האירוע הועבר למצודה'); await poll();
 }
 
 async function doMerge(suggestionId) {
@@ -548,9 +606,14 @@ async function doReject(suggestionId) {
 
 // --- maps (moked shared map + meshager map + hamal all-events map) ---
 let map, markerLayer, meshagerMap, meshagerLayer, hamalMap, hamalLayer;
+// Clean, high-resolution basemap (CartoDB Positron): light, minimal labels,
+// retina tiles. Far less cluttered than the default OSM raster.
+const BASE_TILE_URL = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const BASE_TILE_OPTS = { maxZoom: 20, detectRetina: true, subdomains: "abcd" };
+window.addBaseTiles = (m) => L.tileLayer(BASE_TILE_URL, BASE_TILE_OPTS).addTo(m);
 function initMap() {
   map = L.map("map", { zoomControl: true, attributionControl: false }).setView([32.08, 34.8], 9);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(map);
+  window.addBaseTiles(map);
   markerLayer = L.layerGroup().addTo(map);
 }
 function initMeshagerMap() {
@@ -558,13 +621,13 @@ function initMeshagerMap() {
   const el = document.getElementById("meshager-map");
   if (!el) return;
   meshagerMap = L.map("meshager-map", { zoomControl: true, attributionControl: false }).setView([32.08, 34.8], 9);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(meshagerMap);
+  window.addBaseTiles(meshagerMap);
   meshagerLayer = L.layerGroup().addTo(meshagerMap);
 }
 function initHamalMap() {
   if (hamalMap) return;
   hamalMap = L.map("hamal-map", { zoomControl: true, attributionControl: false }).setView([32.08, 34.8], 9);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(hamalMap);
+  window.addBaseTiles(hamalMap);
   hamalLayer = L.layerGroup().addTo(hamalMap);
 }
 // Draw incident markers onto a given map/layer. opts.highlightMine outlines the
@@ -584,7 +647,7 @@ function drawMarkers(mapObj, layer, opts) {
     const mine = (inc.dispatcher_ids || []).includes(me);
     const highlight = opts.highlightMine && mine;
     const owners = (inc.dispatcher_ids || []).map((id) => (dispById(id) || {}).name).filter(Boolean).join(", ");
-    // C2 (חמ"ל) doesn't show the handling operator — it's an overview, not a workspace.
+    // C2 (מצודה) doesn't show the handling operator — it's an overview, not a workspace.
     const ownerLine = (role === "hamal" || !owners) ? "" : `<br>מטופל ע"י: ${esc(owners)}`;
     const mk = L.circleMarker([loc.lat, loc.lng], {
       radius, color: highlight ? "#fff" : color, weight: highlight ? 2 : 1.5,
@@ -597,18 +660,22 @@ function drawMarkers(mapObj, layer, opts) {
   if (pts.length && !mapObj._fitOnce) { mapObj.fitBounds(pts, { padding: [40, 40], maxZoom: 13 }); mapObj._fitOnce = true; }
 }
 function renderMap() { drawMarkers(map, markerLayer, { highlightMine: true, openAny: false }); }
+// Softer, pastel-leaning severity colors that read well on the light basemap.
 function sevColor(label) {
-  return label === "critical" ? "#f85149" : label === "high" ? "#f0883e"
-    : label === "medium" ? "#d6a30b" : "#3fb950";
+  return label === "critical" ? "#e0655f" : label === "high" ? "#e8965a"
+    : label === "medium" ? "#dcb84e" : "#5fb985";
 }
 
 // --- theme (light / dark) ---
+// Monochrome SVG icons (currentColor = gray) instead of colorful emoji.
+const ICON_MOON = `<svg class="icn" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12.7 2.3a1 1 0 0 0-1.1 1.4 7 7 0 0 1-9.3 9.3 1 1 0 0 0-1.4 1.1A9 9 0 1 0 12.7 2.3z"/></svg>`;
+const ICON_SUN = `<svg class="icn" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-6a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V2a1 1 0 0 1 1-1zm0 19a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1zM3 11a1 1 0 1 1 0 2H2a1 1 0 1 1 0-2h1zm19 0a1 1 0 1 1 0 2h-1a1 1 0 1 1 0-2h1zM5.6 4.2l.7.7A1 1 0 1 1 4.9 6.3l-.7-.7a1 1 0 0 1 1.4-1.4zm12.8 12.8l.7.7a1 1 0 0 1-1.4 1.4l-.7-.7a1 1 0 0 1 1.4-1.4zM4.9 17.7a1 1 0 0 1 1.4 1.4l-.7.7a1 1 0 1 1-1.4-1.4l.7-.7zM17.7 4.9a1 1 0 0 1 1.4 1.4l-.7.7A1 1 0 0 1 17 5.6l.7-.7z"/></svg>`;
 function applyTheme(t) {
   document.body.classList.toggle("light", t === "light");
   const btn = document.getElementById("btn-theme");
-  if (btn) btn.textContent = t === "light" ? "☀️" : "🌙";
+  if (btn) btn.innerHTML = t === "light" ? ICON_SUN : ICON_MOON;
 }
-let theme = localStorage.getItem("theme") || "dark";
+let theme = localStorage.getItem("theme") || "light";
 applyTheme(theme);
 document.getElementById("btn-theme").onclick = () => {
   theme = theme === "light" ? "dark" : "light";
@@ -690,7 +757,7 @@ function renderMeshagerCard(inc) {
   const active = new Set((inc.dispatched || []).map((d) => d.resource));
   const resChecks = Object.keys(RES_HE).filter((r) => active.has(r)).map((r) =>
     `<span class="res-chip sm">${RES_HE[r]} ✓</span>`).join("");
-  const c2Check = inc.escalated_to_c2 ? `<span class="res-chip sm">חמ"ל ✓</span>` : "";
+  const c2Check = inc.escalated_to_c2 ? `<span class="res-chip sm">מצודה ✓</span>` : "";
   const merged = inc.call_ids.length > 1;
   return `<div class="card m-card ${inc.review_flag ? "needs-review" : ""}" data-inc="${inc.incident_id}" style="--sev:${sevVar(sev.label)}">
     ${inc.review_flag ? `<div class="m-review">⚠ ${esc(inc.review_reason || "האירוע אוחד — נא לבדוק מחדש")}</div>` : ""}
@@ -699,7 +766,7 @@ function renderMeshagerCard(inc) {
         <div class="card-title">${esc(inc.title || EVENT_HE[inc.event_type] || inc.incident_id)}</div>
         <div class="card-sub">${esc(EVENT_HE[inc.event_type] || inc.event_type)}${loc.normalized ? ` · ${esc(loc.normalized)}` : ""}</div>
       </div>
-      ${sevBadge(sev, true)}
+      ${sevBadge(sev, true, true)}
     </div>
     <div class="m-summary" dir="rtl">${esc(summary) || "<span class='muted'>טרם חולץ תקציר…</span>"}</div>
     <div class="card-meta">
@@ -712,7 +779,7 @@ function renderMeshagerCard(inc) {
   </div>`;
 }
 
-// --- חמ"ל dashboard ---
+// --- מצודה dashboard ---
 function hamalMetrics() {
   // Only count escalated events for C2 dashboard
   const incs = state.incidents.filter((i) => i.escalated_to_c2);
@@ -763,9 +830,9 @@ function incFilterPass(inc) {
 
 function hamalSignature() {
   const incSig = state.incidents.map((i) => [i.incident_id, i.title, i.event_type, effSev(i),
-    i.workflow_status, i.call_ids.length, i.assigned_meshager_id, i.dispatcher_ids,
-    incidentCasualty(i, "injured"), incidentCasualty(i, "dead"),
-    (i.locations || []).map((l) => [l.lat, l.lng, l.normalized]), i.escalated_to_c2]);
+  i.workflow_status, i.call_ids.length, i.assigned_meshager_id, i.dispatcher_ids,
+  incidentCasualty(i, "injured"), incidentCasualty(i, "dead"),
+  (i.locations || []).map((l) => [l.lat, l.lng, l.normalized]), i.escalated_to_c2]);
   return JSON.stringify([hamalFilter, hamalSevFilter, hamalSort, incSig]);
 }
 
@@ -867,6 +934,7 @@ function render() {
   if (openIncidentId) {
     const inc = incById(openIncidentId);
     if (!inc) { closeDrawer(); return; }
+    if (drawerEditing) return; // don't clobber an open inline editor
     const sig = drawerSignature(inc);
     if (sig !== lastDrawerSig) { renderDrawer(); lastDrawerSig = sig; }
   }

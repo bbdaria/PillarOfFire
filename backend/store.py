@@ -27,7 +27,7 @@ PALETTE = [
 SEED_DISPATCHERS = [
     Dispatcher(dispatcher_id="d-daria", name="דריה", color="#5b8def", role="moked"),
     Dispatcher(dispatcher_id="m-shahar", name="שחר", color="#e8833a", role="meshager"),
-    Dispatcher(dispatcher_id="h-mefaked", name='מפקד חמ"ל', color="#8a7cd8", role="hamal"),
+    Dispatcher(dispatcher_id="h-mefaked", name='מפקד מצודה', color="#8a7cd8", role="hamal"),
 ]
 
 

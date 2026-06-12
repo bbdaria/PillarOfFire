@@ -44,10 +44,10 @@ AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voice_audi
 SAY_LANG = "he-IL"  # <Gather> speech-recognition language
 # Bias recognition toward emergency vocabulary.
 SPEECH_HINTS = ("שריפה, פיצוץ, תאונה, תאונת דרכים, פצוע, פצועים, הרוג, ירי, יריות, "
-                "מחבל, נשק, דם, דקירה, אמבולנס, משטרה, כבאית, עזרה, הצילו, גז, עשן")
+                "מחבל, נשק, דם, דקירה, אמבולנס, משטרה, כבאית, עזרה, הצילו, גז, עשן, פיגוע, הצפה, רעידת אדמה, מפולת")
 
 # --- Keyword triage --------------------------------------------------------
-CRITICAL_KEYWORDS = ["ירי", "פצוע", "הצילו", "מחבל", "נשק", "דם", "דקירה"]
+CRITICAL_KEYWORDS = ["ירי", "פצוע", "הצילו", "מחבל", "נשק", "דם", "דקירה", "פיגוע", "הצפה", "רעידת אדמה", "מפולת"]
 
 
 def triage(transcript: str) -> Tuple[str, List[str]]:
@@ -163,19 +163,30 @@ def _play(clip: str) -> str:
     return f'<Play>/voice/audio/{clip}</Play>'
 
 
+def _listen(action: str, speech_timeout: str = "auto") -> str:
+    """A <Gather> that ONLY listens (no nested prompt). speechTimeout=auto lets
+    Twilio detect end-of-speech; a number waits N s of silence (open-ended answers)."""
+    return (
+        f'<Gather input="speech" language="{SAY_LANG}" speechTimeout="{speech_timeout}" '
+        f'hints={quoteattr(SPEECH_HINTS)} method="POST" '
+        f'action={quoteattr(action)} actionOnEmptyResult="true"/>'
+    )
+
+
 def _gather(clips: List[str], action: str, speech_timeout: str = "auto") -> str:
-    """Play the prompt clip(s) and listen for speech. speechTimeout=auto lets
-    Twilio detect when the caller finished; a number waits N s of silence (used
-    for open-ended answers so they aren't cut off mid-sentence)."""
+    """Play the prompt clip(s) FULLY, THEN listen for speech.
+
+    The prompts are played *before* (not nested inside) the <Gather>. Nesting a
+    prompt inside a speech <Gather> lets Twilio barge in — it begins recognising
+    as soon as it hears the caller (or background noise) and cuts the prompt off
+    mid-sentence. Playing first guarantees the operator finishes the sentence,
+    then we open the mic to capture the answer."""
     plays = "".join(_play(c) for c in clips)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<Response>'
-        f'<Gather input="speech" language="{SAY_LANG}" speechTimeout="{speech_timeout}" '
-        f'hints={quoteattr(SPEECH_HINTS)} method="POST" '
-        f'action={quoteattr(action)} actionOnEmptyResult="true">'
         f'{plays}'
-        '</Gather>'
+        f'{_listen(action, speech_timeout)}'
         '</Response>'
     )
 
@@ -186,17 +197,15 @@ def question_twiml(step: Dict, action: str, intro: bool = False) -> str:
 
 
 def stream_then_question(stream_url: str, action: str) -> str:
-    """Start a background media stream (caller audio -> our ivrit STT, live) and
-    play the greeting + first question. <Start><Stream> runs alongside <Gather>."""
+    """Start a background media stream (caller audio -> our ivrit STT, live),
+    play the greeting + first question FULLY, then listen. <Start><Stream> runs
+    alongside; the prompts are played before <Gather> so they can't be barged."""
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<Response>'
         f'<Start><Stream url={quoteattr(stream_url)} track="inbound_track"/></Start>'
-        f'<Gather input="speech" language="{SAY_LANG}" speechTimeout="auto" '
-        f'hints={quoteattr(SPEECH_HINTS)} method="POST" action={quoteattr(action)} '
-        f'actionOnEmptyResult="true">'
         f'{_play(GREETING_CLIP)}{_play(STEPS[0]["clip"])}'
-        '</Gather>'
+        f'{_listen(action, "auto")}'
         '</Response>'
     )
 

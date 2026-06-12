@@ -56,7 +56,7 @@ class Dispatcher(BaseModel):
     role places them in the chain of escalation:
       moked    — call-taker (מוקדנית): takes calls, forwards events upward.
       meshager — dispatcher (משגר): acts on forwarded events (sends resources).
-      hamal    — command center (חמ"ל): full overview + dashboards.
+      hamal    — command center (מצודה): full overview + dashboards.
     """
     dispatcher_id: str
     name: str
@@ -111,7 +111,7 @@ class Incident(BaseModel):
     forwarded_by: Optional[str] = None          # moked dispatcher_id who forwarded
     forwarded_at: Optional[str] = None           # ISO datetime
     dispatched: List[ResourceDispatch] = Field(default_factory=list)
-    escalated_to_c2: bool = False  # True when meshager escalated to חמ"ל
+    escalated_to_c2: bool = False  # True when meshager escalated to מצודה
     # Set when incidents were combined AFTER being forwarded, so the משגר knows
     # to re-review the now-merged event. Cleared by the משגר once reviewed.
     review_flag: bool = False
