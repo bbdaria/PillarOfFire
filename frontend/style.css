@@ -668,9 +668,13 @@ body.light .ke-pin { box-shadow: 0 2px 5px rgba(31,45,68,.35); }
   gap: 12px;
 }
 .m-card { cursor: pointer; }
-/* severity badge aligned to the (inline) end — the left, in this RTL layout */
-.m-card .card-top { align-items: center; }
-.m-card .card-top .sev-badge { margin-inline-start: auto; }
+/* severity badge + unified-count column, aligned to the (inline) end = left in RTL */
+.m-card .card-top { align-items: flex-start; }
+.m-sev-col {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  margin-inline-start: auto; flex: none;
+}
+.m-unified { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .m-summary {
   margin-top: 10px; color: var(--text); font-size: 13px; line-height: 1.55;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;

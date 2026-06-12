@@ -333,7 +333,8 @@ function renderDrawer() {
   const factsHtml = `<div class="dr-facts">
     ${f.date || f.time ? `<span class="fact">🕒 ${esc(f.date)} ${esc(f.time)}</span>` : ""}
     ${f.callers.length ? `<span class="fact">📞 ${esc(f.callers.join(", "))}</span>` : ""}
-    <span class="fact ${f.ambulance ? "amb" : ""}">🚑 ${f.ambulance ? "נדרש אמבולנס" : "לא נדרש אמבולנס"}${f.injured != null ? ` · ${f.injured} פצועים` : ""}</span>
+    ${f.ambulance ? `<span class="fact amb">🚑 נדרש אמבולנס${f.injured != null ? ` · ${f.injured} פצועים` : ""}</span>`
+      : (f.injured != null ? `<span class="fact">${f.injured} פצועים</span>` : "")}
     ${f.dead ? `<span class="fact crit">☠ ${f.dead} הרוגים</span>` : ""}
     ${f.tags.length ? `<span class="fact">🏷 ${f.tags.map(esc).join(" · ")}</span>` : ""}
   </div>`;
@@ -425,6 +426,26 @@ function editorHTML(value) {
       <button class="act-btn" data-cancel>ביטול</button>
     </div>`;
 }
+// POST JSON and report the HTTP status, so a missing endpoint (e.g. server not
+// restarted -> 404/405) gives an actionable message instead of failing silently.
+async function saveEdit(path, body, okMsg) {
+  try {
+    const r = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) { toast(okMsg); return true; }
+    if (r.status === 404 || r.status === 405) {
+      toast(`שמירה נכשלה (${r.status}) — יש להפעיל מחדש את השרת (run.ps1)`);
+    } else {
+      toast(`שמירה נכשלה (${r.status})`);
+    }
+  } catch (e) {
+    toast("שמירה נכשלה — אין חיבור לשרת");
+  }
+  return false;
+}
 function editSummary(incId) {
   const inc = incById(incId); if (!inc) return;
   const host = document.getElementById("dr-summary"); if (!host) return;
@@ -433,10 +454,8 @@ function editSummary(incId) {
   host.innerHTML = editorHTML(cur);
   host.querySelector("[data-save]").onclick = async () => {
     const val = host.querySelector("textarea").value.trim();
-    const res = await api(`/api/incident/${incId}/summary`, "POST", { summary: val });
-    drawerEditing = false; lastDrawerSig = null;
-    toast(res && res.ok ? "הסיכום עודכן" : "שמירה נכשלה — ודא שהשרת עודכן");
-    await poll();
+    await saveEdit(`/api/incident/${incId}/summary`, { summary: val }, "הסיכום עודכן");
+    drawerEditing = false; lastDrawerSig = null; await poll();
   };
   host.querySelector("[data-cancel]").onclick = () => {
     drawerEditing = false; lastDrawerSig = null; renderDrawer();
@@ -450,10 +469,8 @@ function editTranscript(callId) {
   host.innerHTML = editorHTML(c.transcript || "");
   host.querySelector("[data-save]").onclick = async () => {
     const val = host.querySelector("textarea").value;
-    const res = await api(`/api/call/${callId}/transcript`, "POST", { transcript: val });
-    drawerEditing = false; lastDrawerSig = null;
-    toast(res && res.ok ? "התמלול עודכן" : "שמירה נכשלה — ודא שהשרת עודכן");
-    await poll();
+    await saveEdit(`/api/call/${callId}/transcript`, { transcript: val }, "התמלול עודכן");
+    drawerEditing = false; lastDrawerSig = null; await poll();
   };
   host.querySelector("[data-cancel]").onclick = () => {
     drawerEditing = false; lastDrawerSig = null; renderDrawer();
@@ -758,7 +775,7 @@ function renderMeshagerCard(inc) {
   const resChecks = Object.keys(RES_HE).filter((r) => active.has(r)).map((r) =>
     `<span class="res-chip sm">${RES_HE[r]} ✓</span>`).join("");
   const c2Check = inc.escalated_to_c2 ? `<span class="res-chip sm">מצודה ✓</span>` : "";
-  const merged = inc.call_ids.length > 1;
+  const n = inc.call_ids.length;
   return `<div class="card m-card ${inc.review_flag ? "needs-review" : ""}" data-inc="${inc.incident_id}" style="--sev:${sevVar(sev.label)}">
     ${inc.review_flag ? `<div class="m-review">⚠ ${esc(inc.review_reason || "האירוע אוחד — נא לבדוק מחדש")}</div>` : ""}
     <div class="card-top">
@@ -766,12 +783,14 @@ function renderMeshagerCard(inc) {
         <div class="card-title">${esc(inc.title || EVENT_HE[inc.event_type] || inc.incident_id)}</div>
         <div class="card-sub">${esc(EVENT_HE[inc.event_type] || inc.event_type)}${loc.normalized ? ` · ${esc(loc.normalized)}` : ""}</div>
       </div>
-      ${sevBadge(sev, true, true)}
+      <div class="m-sev-col">
+        ${sevBadge(sev, true, true)}
+        <span class="m-unified">🔗 ${n} ${n === 1 ? "שיחה" : "שיחות מאוחדות"}</span>
+      </div>
     </div>
     <div class="m-summary" dir="rtl">${esc(summary) || "<span class='muted'>טרם חולץ תקציר…</span>"}</div>
     <div class="card-meta">
       <span class="chip wf-chip wf-${wf}">${WF_HE[wf]}</span>
-      ${merged ? `<span class="chip merged-chip">🔗 אוחד · ${inc.call_ids.length} שיחות</span>` : ""}
       ${amb ? `<span class="chip amb-chip">דרוש אמבולנס</span>` : ""}
       <span class="chip">נפגעים: ${inj == null ? "—" : inj}${dead ? ` · ☠ ${dead}` : ""}</span>
       ${resChecks}${c2Check}
