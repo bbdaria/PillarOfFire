@@ -16,4 +16,5 @@ def get_stt_engine() -> STTEngine:
     if engine == "ivrit":
         from stt.ivrit_stt import IvritSTT
         return IvritSTT()
+    print('!!! Defaulted back to Mock STT version !!!')
     return MockSTT()
