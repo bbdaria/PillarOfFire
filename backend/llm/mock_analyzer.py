@@ -20,11 +20,16 @@ from demo_data import GAZETTEER
 # --- Hebrew lexicons -------------------------------------------------------
 
 EVENT_KEYWORDS = [
-    # (event_type, [hebrew triggers])
+    # (event_type, [hebrew triggers]) — first match wins, so put the more
+    # specific events (e.g. terror) before the generic ones (shooting).
+    ("terror_attack", ["פיגוע", "מחבל", "מחבלים", "טרור"]),
     ("explosion", ["פיצוץ", "התפוצצות", "פצצה"]),
     ("fire", ["שריפה", "שרפה", "אש", "עולות באש", "עולה באש", "בוער"]),
     ("traffic_accident", ["תאונה", "התנגש", "התנגשו", "תאונת דרכים", "פגע"]),
     ("shooting", ["ירי", "יריות", "יורים", "נשק", "אקדח", "מטח"]),
+    ("flood", ["הצפה", "הצפות", "שיטפון", "שיטפונות", "שטפון", "הוצף", "הוצפה", "גאות"]),
+    ("earthquake", ["רעידת אדמה", "רעידה", "רעש אדמה"]),
+    ("landslide", ["מפולת", "מפולות", "התמוטטות קרקע", "מפולת בוצית"]),
     ("medical", ["התקף", "לא נושם", "מחוסר הכרה", "דימום"]),
     ("hazmat", ["דליפה", "כימיקל", "רעיל"]),
 ]
@@ -210,7 +215,9 @@ def score_severity(event_type, hazards, casualties, distress, num_calls: int = 1
     reasons: List[str] = []
 
     base = {"explosion": 5, "fire": 4, "hazmat": 5, "shooting": 6,
-            "traffic_accident": 3, "medical": 3, "unknown": 1}.get(event_type, 1)
+            "traffic_accident": 3, "medical": 3, "terror_attack": 8,
+            "flood": 4, "earthquake": 7, "landslide": 5,
+            "unknown": 1}.get(event_type, 1)
     score += base
     if base > 1:
         reasons.append(f"סוג אירוע ({event_type})")

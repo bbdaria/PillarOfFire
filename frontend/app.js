@@ -29,7 +29,9 @@ const knownCalls = {}; // incident_id -> #calls, to flash a fresh merge
 // --- Hebrew label maps ---
 const EVENT_HE = {
   explosion: "פיצוץ", fire: "שריפה", traffic_accident: "תאונת דרכים",
-  medical: "אירוע רפואי", hazmat: 'חומ"ס', unknown: "אירוע לא מזוהה",
+  shooting: "אירוע ירי", terror_attack: "פיגוע", medical: "אירוע רפואי",
+  hazmat: 'חומ"ס', flood: "הצפה", earthquake: "רעידת אדמה", landslide: "מפולת",
+  unknown: "אירוע לא מזוהה",
 };
 const HAZARD_HE = { smoke: "עשן", gas: "גז", fire: "אש", explosion: "פיצוץ", vehicle: "כלי רכב" };
 const DISTRESS_HE = { calm: "רגוע", concerned: "מודאג", distressed: "במצוקה", panicked: "בפאניקה", unknown: "—" };
