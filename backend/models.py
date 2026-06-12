@@ -24,7 +24,7 @@ class Casualties(BaseModel):
 
 
 class Severity(BaseModel):
-    score: int = 1  # 1..10
+    score: int = 1  # 1..4 (1=low, 2=medium, 3=high, 4=critical)
     label: str = "low"  # low | medium | high | critical
     reasoning: str = ""
 
@@ -76,6 +76,7 @@ class Call(BaseModel):
     timestamp: str  # ISO datetime
     language: str = "he"
     color: str = "#888888"  # per-call provenance color
+    call_number: str = ""  # human-readable 4-digit identifier
     status: str = "idle"  # idle | transcribing | analyzed
     transcript: str = ""
     analysis: CallAnalysis = Field(default_factory=CallAnalysis)
@@ -105,11 +106,16 @@ class Incident(BaseModel):
     merged_into: Optional[str] = None  # if merged, the surviving incident id
     severity: Severity = Field(default_factory=Severity)
     # --- escalation workflow (moked -> meshager -> resolved) ---
-    workflow_status: str = "new"  # new | forwarded | in_progress | resolved
+    workflow_status: str = "new"  # new | forwarded | in_progress | resolved | escalated
     assigned_meshager_id: Optional[str] = None  # the משגר handling it
     forwarded_by: Optional[str] = None          # moked dispatcher_id who forwarded
     forwarded_at: Optional[str] = None           # ISO datetime
     dispatched: List[ResourceDispatch] = Field(default_factory=list)
+    escalated_to_c2: bool = False  # True when meshager escalated to חמ"ל
+    # Set when incidents were combined AFTER being forwarded, so the משגר knows
+    # to re-review the now-merged event. Cleared by the משגר once reviewed.
+    review_flag: bool = False
+    review_reason: str = ""
     # A manual priority set by moked/meshager; overrides computed `severity` for
     # display and dashboards when present.
     priority_override: Optional[Severity] = None

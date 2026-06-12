@@ -5,3 +5,4 @@ anthropic>=0.40.0          # LLM_ENGINE=claude
 requests>=2.31.0           # LLM_ENGINE=llama (OpenAI-compatible / Ollama endpoint)
 python-multipart==0.0.18
 faster-whisper>=1.0.0      # STT_ENGINE=ivrit  (ivrit-ai Hebrew models)
+twilio

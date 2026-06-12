@@ -5,45 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>עמוד האש · Pillar of Fire</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="style.css?v=10" />
+  <link rel="stylesheet" href="style.css?v=12" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <span class="flame">🔥</span>
       <div>
-        <h1>עמוד האש <span class="en">Pillar of Fire</span></h1>
+        <h1>Pillar Of Fire</h1>
         <p class="tagline" id="tagline">מרחב עבודה אישי למוקדנית · איחוד שיחות חכם</p>
       </div>
-    </div>
-
-    <!-- Role switcher: moves between the three tiers of the command hierarchy -->
-    <nav class="role-switch" id="role-switch" aria-label="בחירת תפקיד">
-      <button class="role-btn" data-role="moked">מוקדנית</button>
-      <button class="role-btn" data-role="meshager">משגר</button>
-      <button class="role-btn" data-role="hamal">חמ"ל</button>
-    </nav>
-
-    <div class="who">
-      <span class="who-label">מחובר/ת כ־</span>
-      <div class="who-select">
-        <span class="who-avatar" id="who-avatar"></span>
-        <select id="dispatcher-select" aria-label="בחירת משתמש"></select>
-      </div>
+      <!-- Role switcher: right next to the icon -->
+      <nav class="role-switch" id="role-switch" aria-label="בחירת תפקיד">
+        <button class="role-btn" data-role="moked">מוקדנית</button>
+        <button class="role-btn" data-role="meshager">משגר</button>
+        <button class="role-btn" data-role="hamal">חמ"ל</button>
+      </nav>
     </div>
 
     <div class="controls">
       <button id="btn-theme" class="ghost subtle" title="מצב בהיר / כהה" aria-label="החלפת מצב תצוגה">🌙</button>
-      <button id="btn-calendar" class="ghost moked-only">📅 לוח אירועים ידועים</button>
-      <button id="btn-upload" class="primary moked-only">⬆ העלאת הקלטה</button>
-      <input id="file-input" type="file" accept="audio/*" hidden />
+      <button id="btn-calendar" class="ghost subtle" title="אירועים מוכרים">📅 אירועים מוכרים</button>
+      <button id="btn-upload" class="primary moked-only">⬆ העלאת הקלטות</button>
+      <input id="file-input" type="file" accept="audio/*" multiple hidden />
       <button id="btn-reset" class="ghost subtle">איפוס</button>
     </div>
   </header>
-
-  <div class="safety-banner">
-    מערכת תומכת־החלטה בלבד — אינה מחליפה שיקול דעת אנושי או נהלי חירום רשמיים.
-  </div>
 
   <main class="views">
     <!-- ===== מוקדנית: personal call-taking workspace (the original view) ===== -->
@@ -57,10 +44,6 @@
       </section>
 
       <aside class="pane map-pane">
-        <div class="pane-head">
-          <h2>מפה משותפת</h2>
-          <span class="pane-hint">כלל־מערכתית</span>
-        </div>
         <div id="map" class="map"></div>
         <div class="legend">
           <div class="legend-row">
@@ -82,36 +65,50 @@
       </aside>
     </section>
 
-    <!-- ===== משגר: queue of events forwarded to me, with actions ===== -->
+    <!-- ===== משגר: list + map side by side ===== -->
     <section class="view meshager-view" id="view-meshager" hidden>
-      <div class="pane-head">
-        <h2>אירועים שהועברו אליי <span class="count" id="meshager-count">0</span></h2>
-        <span class="pane-hint">בחר אירוע כדי לשלוח כוחות ולנהל טיפול</span>
+      <div class="meshager-layout">
+        <div class="meshager-list-pane">
+          <div class="pane-head">
+            <h2>אירועים שהועברו אליי <span class="count" id="meshager-count">0</span></h2>
+            <span class="pane-hint">בחר אירוע כדי לשלוח כוחות ולנהל טיפול</span>
+          </div>
+          <div id="meshager-queue" class="meshager-list"></div>
+        </div>
+        <aside class="meshager-map-pane">
+          <div id="meshager-map" class="map"></div>
+        </aside>
       </div>
-      <div id="meshager-queue" class="meshager-grid"></div>
     </section>
 
     <!-- ===== חמ"ל: table-first operational overview ===== -->
     <section class="view hamal-view" id="view-hamal" hidden>
-      <div id="hamal-tiles" class="tiles strip"></div>
-      <div class="hamal-ops">
-        <div class="ops-main">
-          <div class="ops-bar">
-            <div class="filters" id="hamal-filters">
-              <button class="filter-btn active" data-filter="all">הכל</button>
-              <button class="filter-btn" data-filter="active">פעילים</button>
-              <button class="filter-btn" data-filter="critical">קריטיים</button>
-            </div>
-            <span class="pane-hint" id="hamal-table-count"></span>
-          </div>
-          <div id="hamal-table" class="table-wrap"></div>
+      <div class="hamal-main">
+        <div class="hamal-topstrip">
+          <div id="hamal-tiles" class="tiles strip"></div>
+          <div class="panel sev-panel"><h3>לפי חומרה</h3><div id="chart-sev" class="barchart"></div></div>
         </div>
-        <aside class="ops-side">
-          <div class="panel"><h3>לפי חומרה</h3><div id="chart-sev" class="barchart"></div></div>
-          <div class="panel"><h3>לפי סוג</h3><div id="chart-type" class="barchart"></div></div>
-          <div class="panel"><h3>מפה</h3><div id="hamal-map" class="map mini"></div></div>
-        </aside>
+        <div class="ops-bar">
+          <div class="filters" id="hamal-filters">
+            <button class="filter-btn active" data-filter="all">הכל</button>
+            <button class="filter-btn" data-filter="open">פתוחים</button>
+            <button class="filter-btn" data-filter="resolved">טופלו</button>
+            <button class="filter-btn" data-filter="critical">קריטיים</button>
+          </div>
+          <select id="hamal-sev-filter" class="hamal-filter-select" aria-label="סינון לפי חומרה">
+            <option value="">כל רמות חומרה</option>
+            <option value="low">נמוכה</option>
+            <option value="medium">בינונית</option>
+            <option value="high">גבוהה</option>
+            <option value="critical">קריטית</option>
+          </select>
+          <span class="pane-hint" id="hamal-table-count"></span>
+        </div>
+        <div id="hamal-table" class="table-wrap"></div>
       </div>
+      <aside class="hamal-side">
+        <div class="panel map-panel"><h3>מפה</h3><div id="hamal-map" class="map"></div></div>
+      </aside>
     </section>
   </main>
 
@@ -127,7 +124,7 @@
   <div id="seg-tip" class="seg-tip hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=12"></script>
-  <script src="known_events.js?v=3"></script>
+  <script src="app.js?v=15"></script>
+  <script src="known_events.js?v=5"></script>
 </body>
 </html>
